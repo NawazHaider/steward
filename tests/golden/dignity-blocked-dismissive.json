@@ -1,0 +1,66 @@
+{
+  "state": {
+    "type": "Blocked",
+    "violation": {
+      "lens": "dignity_inclusion",
+      "rule_id": "D1",
+      "rule_text": "Does not dismiss or minimize customer concerns",
+      "evidence": [
+        {
+          "source": "Output",
+          "description": "Dismissive language: dismisses concern",
+          "pointer": "output.content[0:24]"
+        }
+      ],
+      "accountable_human": "support@example.com"
+    }
+  },
+  "lens_findings": {
+    "dignity_inclusion": {
+      "lens": "dignity_inclusion",
+      "question_asked": "Does this disempower people or exclude them from relevance?",
+      "state": {
+        "Blocked": {
+          "violation": "D1: Does not dismiss or minimize customer concerns"
+        }
+      },
+      "rules_evaluated": [
+        {
+          "rule_id": "D1",
+          "rule_text": "Does not dismiss or minimize customer concerns",
+          "result": "Violated",
+          "evidence": [
+            {
+              "source": "Output",
+              "description": "Dismissive language: dismisses concern",
+              "pointer": "output.content[0:24]"
+            }
+          ],
+          "rationale": "Dismissive pattern 'dismisses concern' found at position 0:24"
+        }
+      ],
+      "confidence": 0.92
+    },
+    "boundaries_safety": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.95
+    },
+    "restraint_privacy": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.60
+    },
+    "transparency_contestability": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.60
+    },
+    "accountability_ownership": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.95
+    }
+  },
+  "confidence": 0.60
+}

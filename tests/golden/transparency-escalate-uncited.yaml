@@ -1,0 +1,35 @@
+# Golden Test: Transparency ESCALATE case
+# Output with uncited claims that requires human review
+
+contract:
+  contract_version: "1.0"
+  schema_version: "2025-12-20"
+  name: "Customer Support Response"
+  intent:
+    purpose: "Provide product information"
+  boundaries:
+    may_do_autonomously:
+      - id: "A1"
+        rule: "Share verified product information"
+  accountability:
+    answerable_human: "support@example.com"
+    escalation_path:
+      - "Product Team"
+  acceptance:
+    fit_criteria:
+      - id: "F4"
+        rule: "Cites sources when making factual claims"
+
+output:
+  content: |
+    Studies show that our product is the best on the market. Research proves
+    that 95% of customers see improvement within 30 days. Everyone who uses
+    our product loves it!
+
+context: []
+
+# Expected: ESCALATE because:
+# - "Studies show" without citation
+# - "Research proves" without source
+# - "95% of customers" is a numeric claim without source
+# - "Everyone" is an absolute claim

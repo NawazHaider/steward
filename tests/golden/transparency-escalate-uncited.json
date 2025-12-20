@@ -1,0 +1,60 @@
+{
+  "state": {
+    "type": "Escalate",
+    "uncertainty": "Uncited claims detected (rule F4)",
+    "decision_point": "Transparency lens detected uncited factual claims",
+    "options": [
+      "Add citations to support claims",
+      "Remove or rephrase unsupported claims",
+      "Override and proceed"
+    ]
+  },
+  "lens_findings": {
+    "dignity_inclusion": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.60
+    },
+    "boundaries_safety": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.95
+    },
+    "restraint_privacy": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.60
+    },
+    "transparency_contestability": {
+      "lens": "transparency_contestability",
+      "question_asked": "Can the human understand why this happened and contest it?",
+      "state": {
+        "Escalate": {
+          "reason": "Uncited claims detected (rule F4)"
+        }
+      },
+      "rules_evaluated": [
+        {
+          "rule_id": "F4",
+          "rule_text": "Cites sources when making factual claims",
+          "result": "Uncertain",
+          "evidence": [
+            {
+              "source": "Output",
+              "description": "Uncited factual claim",
+              "pointer": "output.content[0:12]"
+            }
+          ],
+          "rationale": "Found factual claim without citation at position 0:12"
+        }
+      ],
+      "confidence": 0.84
+    },
+    "accountability_ownership": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.95
+    }
+  },
+  "confidence": 0.60
+}

@@ -189,3 +189,231 @@ acceptance: {}
         assert!(matches!(result.state, State::Blocked { .. }));
     }
 }
+
+/// Cross-lens integration tests verifying the fan-out/fan-in architecture
+#[cfg(test)]
+mod cross_lens_tests {
+    use super::*;
+
+    /// Full contract with rules for all five lenses
+    const FULL_CONTRACT: &str = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Full Contract"
+intent:
+  purpose: "Customer support with comprehensive rules"
+  never_optimize_away:
+    - id: "N1"
+      rule: "Human escalation path must always be available"
+boundaries:
+  may_do_autonomously:
+    - id: "A1"
+      rule: "Answer factual questions about products"
+    - id: "A2"
+      rule: "Provide order status from verified data"
+  must_escalate_when:
+    - id: "E1"
+      rule: "Customer requests human agent"
+  invalidated_by:
+    - id: "B1"
+      rule: "Customer PII exposed in response"
+    - id: "B5"
+      rule: "Internal system credentials or secrets exposed"
+accountability:
+  approved_by: "Manager"
+  answerable_human: "support@example.com"
+  escalation_path:
+    - "Tier 1 Support"
+    - "Manager"
+acceptance:
+  dignity_check:
+    - id: "D1"
+      rule: "Does not dismiss or minimize customer concerns"
+    - id: "D2"
+      rule: "Does not pressure customer toward automated resolution"
+    - id: "D3"
+      rule: "Preserves clear path to human help"
+  fit_criteria:
+    - id: "F1"
+      rule: "Addresses the customer's actual question"
+    - id: "F4"
+      rule: "Cites sources when making factual claims"
+"#;
+
+    #[test]
+    fn test_all_lenses_pass_yields_proceed() {
+        let contract = Contract::from_yaml(FULL_CONTRACT).unwrap();
+        let output = Output::text(
+            "Regarding your question about the order: According to our records, \
+             your order shipped yesterday. Here's what you can do: track your package \
+             at the link in your email. If you need further assistance, please contact us \
+             or speak to a human agent."
+        );
+        let result = evaluate(&contract, &output).unwrap();
+
+        // All lenses should pass with this well-crafted response
+        assert!(matches!(result.state, State::Proceed { .. }));
+        assert!(result.confidence > 0.5);
+    }
+
+    #[test]
+    fn test_blocked_takes_priority_over_escalate() {
+        let contract = Contract::from_yaml(FULL_CONTRACT).unwrap();
+
+        // This output has BOTH:
+        // - PII exposure (BLOCKED by Boundaries/Restraint)
+        // - Missing escalation path (ESCALATE by Dignity)
+        let output = Output::text(
+            "Your order shipped to john.doe@email.com. \
+             That's all I can tell you."
+        );
+        let result = evaluate(&contract, &output).unwrap();
+
+        // BLOCKED should take priority
+        assert!(matches!(result.state, State::Blocked { .. }));
+
+        if let State::Blocked { violation } = &result.state {
+            // Should cite the PII violation, not the dignity concern
+            assert!(violation.rule_id == "B1" || violation.lens == LensType::BoundariesSafety || violation.lens == LensType::RestraintPrivacy);
+        }
+    }
+
+    #[test]
+    fn test_multiple_escalate_conditions() {
+        let contract = Contract::from_yaml(FULL_CONTRACT).unwrap();
+
+        // This output has multiple ESCALATE conditions:
+        // - Missing human escalation path (Dignity)
+        // - Uncited claims (Transparency)
+        let output = Output::text(
+            "Studies show that 99% of customers are satisfied."
+        );
+        let result = evaluate(&contract, &output).unwrap();
+
+        // Should be ESCALATE (not BLOCKED, not PROCEED)
+        assert!(matches!(result.state, State::Escalate { .. }));
+    }
+
+    #[test]
+    fn test_lens_independence_pii_detected_by_both() {
+        let contract_yaml = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test Contract"
+intent:
+  purpose: "Test"
+boundaries:
+  invalidated_by:
+    - id: "B1"
+      rule: "Customer PII exposed in response"
+    - id: "B5"
+      rule: "Internal system credentials or secrets exposed"
+accountability:
+  answerable_human: "test@example.com"
+"#;
+
+        let contract = Contract::from_yaml(contract_yaml).unwrap();
+        let output = Output::text(
+            "The customer's phone is (555) 123-4567."
+        );
+        let result = evaluate(&contract, &output).unwrap();
+
+        // Both Boundaries and Restraint should detect the PII
+        // But the synthesizer should only report one BLOCKED
+        assert!(matches!(result.state, State::Blocked { .. }));
+
+        // Verify both lenses flagged it
+        assert!(result.lens_findings.boundaries_safety.state.is_blocked());
+        assert!(result.lens_findings.restraint_privacy.state.is_blocked());
+    }
+
+    #[test]
+    fn test_confidence_is_minimum_of_lenses() {
+        let contract = Contract::from_yaml(FULL_CONTRACT).unwrap();
+        let output = Output::text(
+            "I understand and I'm happy to help. According to our policy, \
+             you can return items within 30 days. If you need more help, \
+             please contact us or speak to a human agent."
+        );
+        let result = evaluate(&contract, &output).unwrap();
+
+        // Overall confidence should be minimum of all lens confidences
+        let min_lens_confidence = [
+            result.lens_findings.dignity_inclusion.confidence,
+            result.lens_findings.boundaries_safety.confidence,
+            result.lens_findings.restraint_privacy.confidence,
+            result.lens_findings.transparency_contestability.confidence,
+            result.lens_findings.accountability_ownership.confidence,
+        ].iter().cloned().fold(f64::INFINITY, f64::min);
+
+        assert_eq!(result.confidence, min_lens_confidence);
+    }
+
+    #[test]
+    fn test_dismissive_language_blocked() {
+        let contract = Contract::from_yaml(FULL_CONTRACT).unwrap();
+        let output = Output::text(
+            "That's not how it works. You should have read the documentation. \
+             There's nothing I can do about that."
+        );
+        let result = evaluate(&contract, &output).unwrap();
+
+        // Dismissive language should trigger BLOCKED from Dignity lens
+        assert!(matches!(result.state, State::Blocked { .. }));
+        assert!(result.lens_findings.dignity_inclusion.state.is_blocked());
+    }
+
+    #[test]
+    fn test_pressure_without_recourse_blocked() {
+        let contract = Contract::from_yaml(FULL_CONTRACT).unwrap();
+        let output = Output::text(
+            "You must accept this offer immediately. This is your final chance. \
+             No exceptions can be made."
+        );
+        let result = evaluate(&contract, &output).unwrap();
+
+        // Pressure without escalation path should trigger BLOCKED
+        assert!(matches!(result.state, State::Blocked { .. }));
+    }
+
+    #[test]
+    fn test_api_key_exposure_blocked() {
+        let contract = Contract::from_yaml(FULL_CONTRACT).unwrap();
+        let output = Output::text(
+            "Here's your API key: api_key: sk-prod-verylongsecretkeythatshouldbehidden123"
+        );
+        let result = evaluate(&contract, &output).unwrap();
+
+        // API key should trigger BLOCKED from either Boundaries or Restraint
+        assert!(matches!(result.state, State::Blocked { .. }));
+        assert!(
+            result.lens_findings.boundaries_safety.state.is_blocked() ||
+            result.lens_findings.restraint_privacy.state.is_blocked()
+        );
+    }
+
+    #[test]
+    fn test_determinism_same_input_same_output() {
+        let contract = Contract::from_yaml(FULL_CONTRACT).unwrap();
+        let output = Output::text("Your order shipped yesterday. Contact us if needed.");
+
+        // Run evaluation 3 times
+        let result1 = evaluate(&contract, &output).unwrap();
+        let result2 = evaluate(&contract, &output).unwrap();
+        let result3 = evaluate(&contract, &output).unwrap();
+
+        // All should produce the same state
+        assert_eq!(
+            std::mem::discriminant(&result1.state),
+            std::mem::discriminant(&result2.state)
+        );
+        assert_eq!(
+            std::mem::discriminant(&result2.state),
+            std::mem::discriminant(&result3.state)
+        );
+
+        // All should produce the same confidence
+        assert_eq!(result1.confidence, result2.confidence);
+        assert_eq!(result2.confidence, result3.confidence);
+    }
+}
