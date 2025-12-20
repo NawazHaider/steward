@@ -43,7 +43,7 @@ cargo run -p steward-cli -- evaluate --contract contracts/general.yaml --output 
 
 - Open an issue describing the feature
 - Explain the use case and why it would be valuable
-- Reference the blueprint (`steward-blueprint-specs.md`) if relevant
+- Reference the blueprint (`docs/steward-blueprint-specs.md`) if relevant
 - Be open to discussion about implementation approaches
 
 ### Pull Requests

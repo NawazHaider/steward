@@ -1,0 +1,103 @@
+# General Customer Support Stewardship Contract
+# This contract defines the conditions under which AI-generated
+# customer support responses may proceed, must escalate, or are blocked.
+
+contract_version: "1.0"
+schema_version: "2025-12-20"
+policy_pack:
+  - general
+
+name: "Customer Support Response"
+description: "Stewardship contract for AI-generated customer support responses. Defines boundaries for autonomous operation, escalation triggers, and accountability."
+
+intent:
+  purpose: "Generate helpful responses to customer inquiries that resolve issues while preserving human dignity and escalation paths"
+  optimizing_for:
+    - "Resolution of customer issue"
+    - "Customer satisfaction"
+    - "Accurate information from verified sources"
+  never_optimize_away:
+    - id: "N1"
+      rule: "Human escalation path must always be available"
+    - id: "N2"
+      rule: "Accurate information over speed of response"
+    - id: "N3"
+      rule: "Customer dignity and respect"
+
+boundaries:
+  may_do_autonomously:
+    - id: "A1"
+      rule: "Answer factual questions about products and services"
+    - id: "A2"
+      rule: "Provide order status from verified system data"
+    - id: "A3"
+      rule: "Explain policies with citations to policy documents"
+    - id: "A4"
+      rule: "Provide troubleshooting steps from knowledge base"
+
+  must_pause_when:
+    - id: "P1"
+      rule: "Customer expresses frustration or anger"
+    - id: "P2"
+      rule: "Question involves account security or password reset"
+    - id: "P3"
+      rule: "Customer mentions accessibility needs"
+
+  must_escalate_when:
+    - id: "E1"
+      rule: "Legal or compliance topic detected"
+    - id: "E2"
+      rule: "Customer explicitly requests human agent"
+    - id: "E3"
+      rule: "Billing dispute over $100"
+    - id: "E4"
+      rule: "Customer mentions legal action or regulatory complaint"
+    - id: "E5"
+      rule: "Medical symptoms or health concerns mentioned"
+
+  invalidated_by:
+    - id: "B1"
+      rule: "Customer PII exposed in response"
+    - id: "B2"
+      rule: "Medical, legal, or financial advice given"
+    - id: "B3"
+      rule: "System cannot verify accuracy of claim being made"
+    - id: "B4"
+      rule: "Response contains profanity or offensive language"
+    - id: "B5"
+      rule: "Internal system credentials or secrets exposed"
+
+accountability:
+  approved_by: "Support Team Lead"
+  answerable_human: "support-escalation@company.com"
+  escalation_path:
+    - "Tier 1 Support Agent"
+    - "Support Team Lead"
+    - "Customer Experience Manager"
+    - "Legal (if compliance-related)"
+  review_cadence: quarterly
+
+acceptance:
+  fit_criteria:
+    - id: "F1"
+      rule: "Addresses the customer's actual question"
+    - id: "F2"
+      rule: "Information is accurate based on provided context"
+    - id: "F3"
+      rule: "Provides clear next steps when action is required"
+    - id: "F4"
+      rule: "Cites sources when making factual claims"
+    - id: "F5"
+      rule: "Uses language appropriate for general audience"
+
+  dignity_check:
+    - id: "D1"
+      rule: "Does not dismiss or minimize customer concerns"
+    - id: "D2"
+      rule: "Does not pressure customer toward automated resolution"
+    - id: "D3"
+      rule: "Preserves clear path to human help"
+    - id: "D4"
+      rule: "Does not make assumptions about customer capabilities"
+    - id: "D5"
+      rule: "Acknowledges customer emotions when expressed"

@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://steward.agenisea.ai/schemas/result.schema.json",
+  "title": "Steward Evaluation Result Schema",
+  "description": "JSON Schema for evaluation results returned by Steward. Results include state, lens findings, evidence, and confidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "lens_findings", "confidence", "evaluated_at"],
+  "properties": {
+    "state": {
+      "$ref": "#/$defs/State"
+    },
+    "lens_findings": {
+      "$ref": "#/$defs/LensFindings"
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Overall confidence in the evaluation (minimum of lens confidences)",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "evaluated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of evaluation"
+    }
+  },
+  "$defs": {
+    "State": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "summary"],
+          "properties": {
+            "type": {
+              "const": "Proceed"
+            },
+            "summary": {
+              "type": "string",
+              "description": "Summary of why the output passed all checks"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "uncertainty", "decision_point", "options"],
+          "properties": {
+            "type": {
+              "const": "Escalate"
+            },
+            "uncertainty": {
+              "type": "string",
+              "description": "What triggered the escalation"
+            },
+            "decision_point": {
+              "type": "string",
+              "description": "The decision that needs human judgment"
+            },
+            "options": {
+              "type": "array",
+              "description": "Options for the human to consider (no ranking)",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 2
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "violation"],
+          "properties": {
+            "type": {
+              "const": "Blocked"
+            },
+            "violation": {
+              "$ref": "#/$defs/BoundaryViolation"
+            }
+          }
+        }
+      ]
+    },
+    "BoundaryViolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lens", "rule_id", "rule_text", "evidence", "accountable_human"],
+      "properties": {
+        "lens": {
+          "$ref": "#/$defs/LensType"
+        },
+        "rule_id": {
+          "type": "string",
+          "description": "ID of the violated rule",
+          "pattern": "^[A-Z][0-9]+$"
+        },
+        "rule_text": {
+          "type": "string",
+          "description": "Full text of the violated rule"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "minItems": 1
+        },
+        "accountable_human": {
+          "type": "string",
+          "description": "Contact for the accountable human from the contract"
+        }
+      }
+    },
+    "LensType": {
+      "type": "string",
+      "enum": [
+        "dignity_inclusion",
+        "boundaries_safety",
+        "restraint_privacy",
+        "transparency_contestability",
+        "accountability_ownership"
+      ]
+    },
+    "LensFindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dignity_inclusion",
+        "boundaries_safety",
+        "restraint_privacy",
+        "transparency_contestability",
+        "accountability_ownership"
+      ],
+      "properties": {
+        "dignity_inclusion": {
+          "$ref": "#/$defs/LensFinding"
+        },
+        "boundaries_safety": {
+          "$ref": "#/$defs/LensFinding"
+        },
+        "restraint_privacy": {
+          "$ref": "#/$defs/LensFinding"
+        },
+        "transparency_contestability": {
+          "$ref": "#/$defs/LensFinding"
+        },
+        "accountability_ownership": {
+          "$ref": "#/$defs/LensFinding"
+        }
+      }
+    },
+    "LensFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "confidence"],
+      "properties": {
+        "lens": {
+          "$ref": "#/$defs/LensType"
+        },
+        "question_asked": {
+          "type": "string",
+          "description": "The stewardship question this lens answers"
+        },
+        "state": {
+          "$ref": "#/$defs/LensState"
+        },
+        "rules_evaluated": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuleEvaluation"
+          }
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      }
+    },
+    "LensState": {
+      "oneOf": [
+        {
+          "const": "Pass"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["Escalate"],
+          "properties": {
+            "Escalate": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["Blocked"],
+          "properties": {
+            "Blocked": {
+              "type": "object",
+              "properties": {
+                "violation": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RuleEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule_id", "result"],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "pattern": "^[A-Z][0-9]+$"
+        },
+        "rule_text": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string",
+          "enum": ["Satisfied", "Violated", "Uncertain", "NotApplicable"]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Explanation of how the rule was evaluated"
+        }
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim", "source", "pointer"],
+      "properties": {
+        "claim": {
+          "type": "string",
+          "description": "What the evidence supports"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["Contract", "Output", "Context", "Metadata"]
+        },
+        "pointer": {
+          "type": "string",
+          "description": "Path to location in source (e.g., 'output.content[47:72]')"
+        }
+      }
+    }
+  }
+}

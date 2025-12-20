@@ -1,0 +1,25 @@
+[package]
+name = "steward-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Optional LLM-assisted evaluation runtime for Steward"
+
+[dependencies]
+steward-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+# LLM providers (optional features)
+# reqwest = { version = "0.11", features = ["json"], optional = true }
+
+[features]
+default = []
+# claude = ["reqwest"]
+# openai = ["reqwest"]

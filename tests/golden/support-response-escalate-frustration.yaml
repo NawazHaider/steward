@@ -1,0 +1,33 @@
+# Golden Test: ESCALATE case - Customer frustration
+# Customer expresses frustration, triggering pause condition
+
+contract:
+  contract_version: "1.0"
+  schema_version: "2025-12-20"
+  name: "Customer Support Response"
+  intent:
+    purpose: "Generate helpful responses to customer inquiries"
+  boundaries:
+    must_pause_when:
+      - id: "P1"
+        rule: "Customer expresses frustration or anger"
+    invalidated_by:
+      - id: "B1"
+        rule: "Customer PII exposed in response"
+  accountability:
+    answerable_human: "support@example.com"
+    escalation_path:
+      - "Tier 1 Support"
+  acceptance: {}
+
+output:
+  content: |
+    I understand you're looking for information about your order.
+    Let me check on that for you.
+
+context:
+  - "I'm so frustrated! I've been waiting for a week and still no package!"
+
+# Expected: ESCALATE because:
+# - Context contains "frustrated" matching P1
+# - Output itself is fine, but context triggers pause condition

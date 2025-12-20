@@ -1,0 +1,64 @@
+{
+  "state": {
+    "type": "Blocked",
+    "violation": {
+      "lens": "boundaries_safety",
+      "rule_id": "B1",
+      "rule_text": "Customer PII exposed in response",
+      "evidence": [
+        {
+          "claim": "Email address exposed in response",
+          "source": "Output",
+          "pointer": "output.content[30:52]"
+        }
+      ],
+      "accountable_human": "support@example.com"
+    }
+  },
+  "lens_findings": {
+    "dignity_inclusion": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.75
+    },
+    "boundaries_safety": {
+      "state": {
+        "Blocked": {
+          "violation": "B1: Customer PII exposed in response"
+        }
+      },
+      "rules_evaluated": [
+        {
+          "rule_id": "B1",
+          "rule_text": "Customer PII exposed in response",
+          "result": "Violated",
+          "evidence": [
+            {
+              "claim": "Email address exposed in response",
+              "source": "Output",
+              "pointer": "output.content[30:52]"
+            }
+          ],
+          "rationale": "Email address found at position 30:52"
+        }
+      ],
+      "confidence": 0.98
+    },
+    "restraint_privacy": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.70
+    },
+    "transparency_contestability": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.70
+    },
+    "accountability_ownership": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.95
+    }
+  },
+  "confidence": 0.70
+}

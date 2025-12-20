@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="Steward" width="200">
+  <img src="assets/logo.png" alt="Steward" width="200">
 </p>
 
 # Steward

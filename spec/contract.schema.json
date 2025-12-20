@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://steward.agenisea.ai/schemas/contract.schema.json",
+  "title": "Steward Contract Schema",
+  "description": "JSON Schema for stewardship contracts. Contracts are governance documents that define intent, boundaries, accountability, and acceptance criteria.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "schema_version",
+    "name",
+    "intent",
+    "boundaries",
+    "accountability",
+    "acceptance"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "description": "Semantic version of this specific contract",
+      "pattern": "^\\d+\\.\\d+(\\.\\d+)?$",
+      "examples": ["1.0", "1.0.0", "2.1.3"]
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "Date-based version of the contract schema",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "examples": ["2025-12-20"]
+    },
+    "policy_pack": {
+      "type": "array",
+      "description": "Policy packs this contract extends",
+      "items": {
+        "type": "string"
+      },
+      "default": ["general"]
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable name for this contract",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of the contract purpose",
+      "maxLength": 2000
+    },
+    "intent": {
+      "$ref": "#/$defs/Intent"
+    },
+    "boundaries": {
+      "$ref": "#/$defs/Boundaries"
+    },
+    "accountability": {
+      "$ref": "#/$defs/Accountability"
+    },
+    "acceptance": {
+      "$ref": "#/$defs/Acceptance"
+    }
+  },
+  "$defs": {
+    "Rule": {
+      "type": "object",
+      "description": "A single evaluable rule with unique identifier",
+      "additionalProperties": false,
+      "required": ["id", "rule"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this rule (e.g., 'B1', 'D2')",
+          "pattern": "^[A-Z][0-9]+$"
+        },
+        "rule": {
+          "type": "string",
+          "description": "The rule text to evaluate against",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "Intent": {
+      "type": "object",
+      "description": "Defines why this automation exists and what it optimizes for",
+      "additionalProperties": false,
+      "required": ["purpose"],
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "description": "The primary purpose of this automation",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "optimizing_for": {
+          "type": "array",
+          "description": "What this automation optimizes for (in priority order)",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10
+        },
+        "never_optimize_away": {
+          "type": "array",
+          "description": "Constraints that must never be traded off",
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        }
+      }
+    },
+    "Boundaries": {
+      "type": "object",
+      "description": "Defines operational limits and conditions for the automation",
+      "additionalProperties": false,
+      "properties": {
+        "may_do_autonomously": {
+          "type": "array",
+          "description": "Actions the automation may take without human intervention",
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        },
+        "must_pause_when": {
+          "type": "array",
+          "description": "Conditions that should trigger a pause for human review",
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        },
+        "must_escalate_when": {
+          "type": "array",
+          "description": "Conditions that require immediate escalation to a human",
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        },
+        "invalidated_by": {
+          "type": "array",
+          "description": "Conditions that invalidate the automation entirely (triggers BLOCKED)",
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        }
+      }
+    },
+    "Accountability": {
+      "type": "object",
+      "description": "Defines who is responsible and how to escalate",
+      "additionalProperties": false,
+      "required": ["answerable_human"],
+      "properties": {
+        "approved_by": {
+          "type": "string",
+          "description": "Role or person who approved this contract",
+          "maxLength": 200
+        },
+        "answerable_human": {
+          "type": "string",
+          "description": "Contact for the human accountable for this automation",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "escalation_path": {
+          "type": "array",
+          "description": "Ordered list of escalation contacts",
+          "items": {
+            "type": "string"
+          }
+        },
+        "review_cadence": {
+          "type": "string",
+          "description": "How often this contract should be reviewed",
+          "enum": ["weekly", "monthly", "quarterly", "annually", "on_incident"]
+        }
+      }
+    },
+    "Acceptance": {
+      "type": "object",
+      "description": "Defines criteria for acceptable outputs",
+      "additionalProperties": false,
+      "properties": {
+        "fit_criteria": {
+          "type": "array",
+          "description": "Criteria that define a fit-for-purpose output",
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        },
+        "dignity_check": {
+          "type": "array",
+          "description": "Criteria for preserving human dignity",
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        }
+      }
+    }
+  }
+}

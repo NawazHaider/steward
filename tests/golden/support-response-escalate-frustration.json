@@ -1,0 +1,65 @@
+{
+  "state": {
+    "type": "Escalate",
+    "uncertainty": "Customer frustration detected (rule P1)",
+    "decision_point": "Should automation continue or should a human take over? Trigger: Customer frustration detected (rule P1)",
+    "options": [
+      "Continue with automated response - condition is minor",
+      "Transfer to human agent - honor the trigger condition",
+      "Acknowledge the trigger, then offer human transfer option"
+    ]
+  },
+  "lens_findings": {
+    "dignity_inclusion": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.75
+    },
+    "boundaries_safety": {
+      "state": {
+        "Escalate": {
+          "reason": "Customer frustration detected (rule P1)"
+        }
+      },
+      "rules_evaluated": [
+        {
+          "rule_id": "B1",
+          "rule_text": "Customer PII exposed in response",
+          "result": "Satisfied",
+          "evidence": [],
+          "rationale": null
+        },
+        {
+          "rule_id": "P1",
+          "rule_text": "Customer expresses frustration or anger",
+          "result": "Uncertain",
+          "evidence": [
+            {
+              "claim": "Customer frustration detected",
+              "source": "Context",
+              "pointer": "context[0][0:50]"
+            }
+          ],
+          "rationale": "Frustration keywords detected in context"
+        }
+      ],
+      "confidence": 0.61
+    },
+    "restraint_privacy": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.70
+    },
+    "transparency_contestability": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.70
+    },
+    "accountability_ownership": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.95
+    }
+  },
+  "confidence": 0.61
+}

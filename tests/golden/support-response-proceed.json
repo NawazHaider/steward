@@ -1,0 +1,64 @@
+{
+  "state": {
+    "type": "Proceed",
+    "summary": "All contract conditions satisfied. Output may proceed."
+  },
+  "lens_findings": {
+    "dignity_inclusion": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.75
+    },
+    "boundaries_safety": {
+      "state": "Pass",
+      "rules_evaluated": [
+        {
+          "rule_id": "B1",
+          "rule_text": "Customer PII exposed in response",
+          "result": "Satisfied",
+          "evidence": [],
+          "rationale": null
+        }
+      ],
+      "confidence": 0.95
+    },
+    "restraint_privacy": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.70
+    },
+    "transparency_contestability": {
+      "state": "Pass",
+      "rules_evaluated": [],
+      "confidence": 0.70
+    },
+    "accountability_ownership": {
+      "state": "Pass",
+      "rules_evaluated": [
+        {
+          "rule_id": "ACC1",
+          "rule_text": "Contract must have answerable_human",
+          "result": "Satisfied",
+          "evidence": [],
+          "rationale": "Accountable human: support@example.com"
+        },
+        {
+          "rule_id": "ACC2",
+          "rule_text": "Contract should have escalation_path",
+          "result": "Satisfied",
+          "evidence": [],
+          "rationale": "Escalation path has 2 levels"
+        },
+        {
+          "rule_id": "ACC3",
+          "rule_text": "Contract should have approved_by",
+          "result": "Uncertain",
+          "evidence": [],
+          "rationale": "No approval on record"
+        }
+      ],
+      "confidence": 0.75
+    }
+  },
+  "confidence": 0.70
+}

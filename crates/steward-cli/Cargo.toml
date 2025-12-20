@@ -1,0 +1,23 @@
+[package]
+name = "steward-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI for Steward stewardship contract evaluation"
+
+[[bin]]
+name = "steward"
+path = "src/main.rs"
+
+[dependencies]
+steward-core.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

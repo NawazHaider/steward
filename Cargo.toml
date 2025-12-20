@@ -1,0 +1,55 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/steward-core",
+    "crates/steward-cli",
+    "crates/steward-runtime",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Patrick Peña - Agenisea AI <patrick@agenisea.ai>"]
+license = "MIT"
+repository = "https://github.com/agenisea/steward"
+documentation = "https://docs.rs/steward"
+keywords = ["stewardship", "governance", "ai", "evaluation", "contracts"]
+categories = ["development-tools", "config"]
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Schema validation
+jsonschema = "0.18"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Async runtime (for future LLM calls)
+tokio = { version = "1.35", features = ["full"] }
+
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Regex for pattern matching
+regex = "1.10"
+lazy_static = "1.4"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Testing
+proptest = "1.4"
+
+# Internal crates
+steward-core = { path = "crates/steward-core" }
+steward-runtime = { path = "crates/steward-runtime" }
