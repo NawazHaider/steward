@@ -1,0 +1,137 @@
+# =============================================================================
+# Steward .gitignore
+# Rust Project with Python/Node Bindings
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Rust Build Artifacts
+# -----------------------------------------------------------------------------
+target/
+**/*.rs.bk
+Cargo.lock
+
+# -----------------------------------------------------------------------------
+# Environment Variables & Secrets
+# -----------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+
+# API keys and credentials
+*.key
+*.pem
+secrets.yml
+secrets.json
+credentials.json
+
+# -----------------------------------------------------------------------------
+# Claude Code
+# -----------------------------------------------------------------------------
+.claude/
+CLAUDE.md
+
+# -----------------------------------------------------------------------------
+# IDE and Editor Files
+# -----------------------------------------------------------------------------
+# VS Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# JetBrains IDEs (IntelliJ, CLion, RustRover)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# -----------------------------------------------------------------------------
+# Operating System Files
+# -----------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+.fuse_hidden*
+.directory
+.Trash-*
+
+# -----------------------------------------------------------------------------
+# Logs & Debug Files
+# -----------------------------------------------------------------------------
+*.log
+
+# -----------------------------------------------------------------------------
+# Testing & Coverage
+# -----------------------------------------------------------------------------
+coverage/
+*.lcov
+lcov.info
+tarpaulin-report.html
+
+# -----------------------------------------------------------------------------
+# Python Bindings (PyO3/maturin)
+# -----------------------------------------------------------------------------
+bindings/python/.venv/
+bindings/python/venv/
+bindings/python/__pycache__/
+bindings/python/*.pyc
+bindings/python/*.egg-info/
+bindings/python/dist/
+bindings/python/build/
+bindings/python/*.so
+bindings/python/*.pyd
+
+# -----------------------------------------------------------------------------
+# Node.js Bindings (napi-rs)
+# -----------------------------------------------------------------------------
+bindings/node/node_modules/
+bindings/node/*.node
+bindings/node/dist/
+
+# -----------------------------------------------------------------------------
+# Temporary Files
+# -----------------------------------------------------------------------------
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+
+# -----------------------------------------------------------------------------
+# Project-Specific Exclusions
+# -----------------------------------------------------------------------------
+# Init spec file (superseded by steward-blueprint-specs.md)
+steward-blueprint-specs-init.md
+
+# -----------------------------------------------------------------------------
+# Miscellaneous
+# -----------------------------------------------------------------------------
+prompts/
+*.txt
