@@ -1,0 +1,20 @@
+[package]
+name = "steward-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Python bindings for Steward - Deterministic stewardship contract evaluation"
+repository.workspace = true
+keywords = ["stewardship", "governance", "ai", "python", "pyo3"]
+categories = ["api-bindings"]
+
+[lib]
+name = "steward"
+crate-type = ["cdylib"]
+
+[dependencies]
+steward-core = { path = "../../crates/steward-core" }
+pyo3 = { version = "0.23", features = ["extension-module"] }
+serde_json = { workspace = true }

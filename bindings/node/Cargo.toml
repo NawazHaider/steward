@@ -1,0 +1,23 @@
+[package]
+name = "steward-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Node.js bindings for Steward - Deterministic stewardship contract evaluation"
+repository.workspace = true
+keywords = ["stewardship", "governance", "ai", "nodejs", "napi"]
+categories = ["api-bindings"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+steward-core = { path = "../../crates/steward-core" }
+napi = { version = "2.16", default-features = false, features = ["napi8", "serde-json"] }
+napi-derive = "2.16"
+serde_json = { workspace = true }
+
+[build-dependencies]
+napi-build = "2.1"

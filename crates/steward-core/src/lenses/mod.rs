@@ -48,6 +48,7 @@ pub trait Lens {
 }
 
 /// Create a default PASS finding for a lens.
+#[allow(dead_code)] // Utility function for lens implementations
 pub(crate) fn default_pass_finding(lens_type: LensType) -> LensFinding {
     LensFinding {
         lens: Some(lens_type),

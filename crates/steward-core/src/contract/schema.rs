@@ -6,6 +6,7 @@
 use thiserror::Error;
 
 /// Errors from schema validation.
+#[allow(dead_code)] // Reserved for future JSON Schema validation
 #[derive(Error, Debug)]
 pub enum SchemaError {
     #[error("Failed to load schema: {0}")]
@@ -19,6 +20,7 @@ pub enum SchemaError {
 ///
 /// Note: Full JSON Schema validation is deferred to a future version.
 /// Currently, structural validation is done in the parser.
+#[allow(dead_code)] // Reserved for future JSON Schema validation
 pub fn validate_contract_json(_value: &serde_json::Value) -> Result<(), SchemaError> {
     // TODO: Implement full JSON Schema validation using jsonschema crate
     // For now, structural validation is handled by the parser's type system

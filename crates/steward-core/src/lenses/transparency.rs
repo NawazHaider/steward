@@ -132,6 +132,7 @@ impl TransparencyLens {
     }
 
     /// Check for AI disclosure.
+    #[allow(dead_code)] // Reserved for future transparency checks
     fn has_ai_disclosure(&self, content: &str) -> bool {
         AI_DISCLOSURE_PATTERNS.is_match(content)
     }
@@ -192,7 +193,7 @@ impl Lens for TransparencyLens {
         let content = &request.output.content;
 
         let mut rules_evaluated = Vec::new();
-        let mut blocked_violation: Option<(String, String, Vec<Evidence>)> = None;
+        let blocked_violation: Option<(String, String, Vec<Evidence>)> = None;
         let mut escalate_reason: Option<String> = None;
 
         // Get transparency rules (fit_criteria)
@@ -522,6 +523,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)] // Test helper for future use
     const BASE_CONTRACT: &str = r#"
 contract_version: "1.0"
 schema_version: "2025-12-20"

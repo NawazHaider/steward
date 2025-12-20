@@ -279,6 +279,7 @@ impl RestraintLens {
 #[derive(Debug, Clone)]
 struct PiiMatch {
     pii_type: PiiType,
+    #[allow(dead_code)] // Stored for potential logging/masking
     value: String,
     start: usize,
     end: usize,

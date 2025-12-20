@@ -1,0 +1,56 @@
+{
+  "name": "@steward/core",
+  "version": "0.1.0",
+  "description": "Deterministic stewardship contract evaluation engine",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "steward",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-musl",
+        "x86_64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl"
+      ]
+    }
+  },
+  "license": "MIT",
+  "author": "Patrick Peña - Agenisea AI <patrick@agenisea.ai>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agenisea/steward.git"
+  },
+  "keywords": [
+    "stewardship",
+    "governance",
+    "ai",
+    "evaluation",
+    "contracts",
+    "napi"
+  ],
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.0",
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  },
+  "scripts": {
+    "artifacts": "napi artifacts",
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "prepublishOnly": "napi prepublish -t npm",
+    "test": "node tests/test.js",
+    "version": "napi version"
+  },
+  "engines": {
+    "node": ">= 18"
+  }
+}
