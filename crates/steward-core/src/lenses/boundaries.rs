@@ -197,29 +197,30 @@ impl Lens for BoundariesLens {
             }
 
             // Medical/legal/financial advice check
-            if rule_lower.contains("medical") && rule_lower.contains("advice") {
-                if self.check_keywords(content, &MEDICAL_KEYWORDS) {
-                    let evidence = vec![Evidence::from_output(
-                        "Medical-related content detected",
-                        0,
-                        content.len().min(100),
-                    )];
+            if rule_lower.contains("medical")
+                && rule_lower.contains("advice")
+                && self.check_keywords(content, &MEDICAL_KEYWORDS)
+            {
+                let evidence = vec![Evidence::from_output(
+                    "Medical-related content detected",
+                    0,
+                    content.len().min(100),
+                )];
 
-                    rules_evaluated.push(RuleEvaluation {
-                        rule_id: rule.id.clone(),
-                        rule_text: Some(rule.rule.clone()),
-                        result: RuleResult::Uncertain,
-                        evidence: evidence.clone(),
-                        rationale: Some("Content may contain medical advice".to_string()),
-                    });
+                rules_evaluated.push(RuleEvaluation {
+                    rule_id: rule.id.clone(),
+                    rule_text: Some(rule.rule.clone()),
+                    result: RuleResult::Uncertain,
+                    evidence: evidence.clone(),
+                    rationale: Some("Content may contain medical advice".to_string()),
+                });
 
-                    // This is uncertain, so escalate rather than block
-                    if escalate_reason.is_none() {
-                        escalate_reason = Some(format!(
-                            "Possible medical content detected (rule {})",
-                            rule.id
-                        ));
-                    }
+                // This is uncertain, so escalate rather than block
+                if escalate_reason.is_none() {
+                    escalate_reason = Some(format!(
+                        "Possible medical content detected (rule {})",
+                        rule.id
+                    ));
                 }
             }
 

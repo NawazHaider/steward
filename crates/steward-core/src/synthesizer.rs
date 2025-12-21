@@ -3,7 +3,11 @@
 //! The synthesizer applies strict, non-configurable policy rules:
 //! 1. If ANY lens returns BLOCKED → final state is BLOCKED
 //! 2. Else if ANY lens returns ESCALATE → final state is ESCALATE
-//! 3. Else → final state is PROCEED
+//! 3. Else if confidence < 0.4 → force ESCALATE (the honesty rule)
+//! 4. Else → final state is PROCEED
+//!
+//! The honesty rule: uncertainty is a governance signal, not an error to hide.
+//! Low confidence means the system cannot reliably assess the output.
 //!
 //! These rules are governance machinery, not a tuning toy.
 
@@ -18,6 +22,20 @@ use crate::types::{
 pub struct Synthesizer;
 
 impl Synthesizer {
+    /// The honesty rule threshold: confidence below this triggers ESCALATE.
+    ///
+    /// Per spec section 2.4: "< 0.4: Low confidence (triggers ESCALATE if no BLOCKED)"
+    ///
+    /// # Security Note
+    ///
+    /// This is a compile-time constant, not a runtime configuration.
+    /// The threshold cannot be modified after compilation, ensuring governance
+    /// policy cannot be bypassed at runtime. Public visibility enables:
+    /// - Transparent policy (aligns with Steward's transparency principle)
+    /// - Clean test assertions without magic numbers
+    /// - External documentation/tooling can reference the authoritative value
+    pub const LOW_CONFIDENCE_THRESHOLD: f64 = 0.4;
+
     pub fn new() -> Self {
         Self
     }
@@ -72,7 +90,31 @@ impl Synthesizer {
             };
         }
 
-        // Rule 3: Otherwise -> PROCEED
+        // Rule 3: The Honesty Rule - Low confidence forces ESCALATE
+        // If confidence < 0.4 and no lens is BLOCKED, the system admits uncertainty
+        // rather than guessing. Uncertainty is a governance signal, not an error.
+        if confidence < Self::LOW_CONFIDENCE_THRESHOLD {
+            return EvaluationResult {
+                state: State::Escalate {
+                    uncertainty: format!(
+                        "Low confidence ({:.0}%) - system cannot reliably assess this output",
+                        confidence * 100.0
+                    ),
+                    decision_point: "Confidence is too low for automated decision. Human judgment required.".to_string(),
+                    options: vec![
+                        "Review output manually and approve if appropriate".to_string(),
+                        "Request additional context to improve confidence".to_string(),
+                        "Reject output and request regeneration".to_string(),
+                    ],
+                },
+                lens_findings: findings,
+                confidence,
+                evaluated_at: Utc::now(),
+                metadata: std::collections::HashMap::new(),
+            };
+        }
+
+        // Rule 4: Otherwise -> PROCEED
         let summary = self.build_summary(&findings);
         EvaluationResult {
             state: State::Proceed { summary },
@@ -152,8 +194,7 @@ impl Synthesizer {
         .iter()
         .cloned()
         .fold(f64::INFINITY, f64::min)
-        .min(1.0)
-        .max(0.0)
+        .clamp(0.0, 1.0)
     }
 
     /// Build a human-readable summary for PROCEED state.
@@ -386,5 +427,129 @@ accountability:
         let result = synthesizer.synthesize(findings, &test_contract());
 
         assert_eq!(result.confidence, 0.5);
+    }
+
+    // =========================================================================
+    // Honesty Rule Tests (Spec Section 2.4)
+    // =========================================================================
+
+    fn low_confidence_pass_finding(lens: LensType, confidence: f64) -> LensFinding {
+        LensFinding {
+            lens: Some(lens),
+            question_asked: None,
+            state: LensState::Pass,
+            rules_evaluated: vec![],
+            confidence,
+        }
+    }
+
+    #[test]
+    fn test_honesty_rule_low_confidence_forces_escalate() {
+        // All lenses pass but with confidence below threshold
+        let low_conf = Synthesizer::LOW_CONFIDENCE_THRESHOLD - 0.01;
+        let findings = LensFindings {
+            dignity_inclusion: low_confidence_pass_finding(LensType::DignityInclusion, low_conf),
+            boundaries_safety: low_confidence_pass_finding(LensType::BoundariesSafety, low_conf),
+            restraint_privacy: low_confidence_pass_finding(LensType::RestraintPrivacy, low_conf),
+            transparency_contestability: low_confidence_pass_finding(LensType::TransparencyContestability, low_conf),
+            accountability_ownership: low_confidence_pass_finding(LensType::AccountabilityOwnership, low_conf),
+        };
+
+        let synthesizer = Synthesizer::new();
+        let result = synthesizer.synthesize(findings, &test_contract());
+
+        // Should be ESCALATE due to honesty rule, not PROCEED
+        assert!(matches!(result.state, State::Escalate { .. }));
+
+        if let State::Escalate { uncertainty, .. } = &result.state {
+            assert!(uncertainty.contains("Low confidence"));
+        }
+    }
+
+    #[test]
+    fn test_honesty_rule_boundary_exactly_at_threshold_proceeds() {
+        // Confidence exactly at 0.4 should PROCEED (threshold is strictly < 0.4)
+        let at_threshold = Synthesizer::LOW_CONFIDENCE_THRESHOLD;
+        let findings = LensFindings {
+            dignity_inclusion: low_confidence_pass_finding(LensType::DignityInclusion, at_threshold),
+            boundaries_safety: low_confidence_pass_finding(LensType::BoundariesSafety, at_threshold),
+            restraint_privacy: low_confidence_pass_finding(LensType::RestraintPrivacy, at_threshold),
+            transparency_contestability: low_confidence_pass_finding(LensType::TransparencyContestability, at_threshold),
+            accountability_ownership: low_confidence_pass_finding(LensType::AccountabilityOwnership, at_threshold),
+        };
+
+        let synthesizer = Synthesizer::new();
+        let result = synthesizer.synthesize(findings, &test_contract());
+
+        // Exactly 0.4 should PROCEED (spec says "< 0.4" triggers escalate)
+        assert!(matches!(result.state, State::Proceed { .. }));
+    }
+
+    #[test]
+    fn test_honesty_rule_one_low_confidence_lens_triggers_escalate() {
+        // Four lenses high confidence, one below threshold
+        let mut findings = LensFindings {
+            dignity_inclusion: pass_finding(LensType::DignityInclusion),
+            boundaries_safety: pass_finding(LensType::BoundariesSafety),
+            restraint_privacy: pass_finding(LensType::RestraintPrivacy),
+            transparency_contestability: pass_finding(LensType::TransparencyContestability),
+            accountability_ownership: pass_finding(LensType::AccountabilityOwnership),
+        };
+
+        // One lens with very low confidence
+        findings.restraint_privacy.confidence = 0.2;
+
+        let synthesizer = Synthesizer::new();
+        let result = synthesizer.synthesize(findings, &test_contract());
+
+        // min() confidence is 0.2 < 0.4, should ESCALATE
+        assert!(matches!(result.state, State::Escalate { .. }));
+        assert_eq!(result.confidence, 0.2);
+    }
+
+    #[test]
+    fn test_honesty_rule_blocked_takes_priority_over_low_confidence() {
+        // BLOCKED should take priority even with low confidence
+        let low_conf = 0.1;
+        let mut findings = LensFindings {
+            dignity_inclusion: low_confidence_pass_finding(LensType::DignityInclusion, low_conf),
+            boundaries_safety: blocked_finding(LensType::BoundariesSafety),
+            restraint_privacy: low_confidence_pass_finding(LensType::RestraintPrivacy, low_conf),
+            transparency_contestability: low_confidence_pass_finding(LensType::TransparencyContestability, low_conf),
+            accountability_ownership: low_confidence_pass_finding(LensType::AccountabilityOwnership, low_conf),
+        };
+        findings.boundaries_safety.confidence = low_conf;
+
+        let synthesizer = Synthesizer::new();
+        let result = synthesizer.synthesize(findings, &test_contract());
+
+        // BLOCKED takes priority over honesty rule
+        assert!(matches!(result.state, State::Blocked { .. }));
+    }
+
+    #[test]
+    fn test_honesty_rule_lens_escalate_takes_priority_over_low_confidence() {
+        // Lens ESCALATE should take priority over honesty rule ESCALATE
+        // (Both result in ESCALATE, but the reason should be from the lens)
+        let low_conf = 0.2;
+        let mut findings = LensFindings {
+            dignity_inclusion: escalate_finding(LensType::DignityInclusion),
+            boundaries_safety: low_confidence_pass_finding(LensType::BoundariesSafety, low_conf),
+            restraint_privacy: low_confidence_pass_finding(LensType::RestraintPrivacy, low_conf),
+            transparency_contestability: low_confidence_pass_finding(LensType::TransparencyContestability, low_conf),
+            accountability_ownership: low_confidence_pass_finding(LensType::AccountabilityOwnership, low_conf),
+        };
+        findings.dignity_inclusion.confidence = low_conf;
+
+        let synthesizer = Synthesizer::new();
+        let result = synthesizer.synthesize(findings, &test_contract());
+
+        assert!(matches!(result.state, State::Escalate { .. }));
+
+        // Should cite the lens reason, not the honesty rule
+        if let State::Escalate { uncertainty, .. } = &result.state {
+            assert!(uncertainty.contains("Test escalation"));
+            assert!(!uncertainty.contains("Low confidence"));
+        }
     }
 }

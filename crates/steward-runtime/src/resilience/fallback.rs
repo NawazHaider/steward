@@ -3,10 +3,11 @@
 use serde::{Deserialize, Serialize};
 
 /// Fallback strategy when LLM fails or budget exceeded.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FallbackStrategy {
     /// Use deterministic evaluation from steward-core
+    #[default]
     Deterministic,
 
     /// Return cached result if available
@@ -20,12 +21,6 @@ pub enum FallbackStrategy {
 
     /// Fail the evaluation
     Fail,
-}
-
-impl Default for FallbackStrategy {
-    fn default() -> Self {
-        Self::Deterministic
-    }
 }
 
 /// Fallback chain - tried in order.

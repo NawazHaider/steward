@@ -32,6 +32,8 @@ Contract + Output → [5 Lenses in parallel] → Synthesizer → PROCEED | ESCAL
 | **ESCALATE** | Uncertainty detected | Present decision to human |
 | **BLOCKED** | Boundary violated | Stop immediately, notify accountable human |
 
+**The honesty rule:** If overall confidence falls below 0.4 and no lens is BLOCKED, the result is forced to ESCALATE. Uncertainty is a governance signal, not an error to hide.
+
 ---
 
 ## Quick Start
@@ -142,11 +144,30 @@ See [Compliance Mapping](docs/compliance-mapping.md) for detailed regulatory cov
 ```
 steward-core (deterministic, NO LLM)      steward-runtime (optional LLM)
 ├── 5 independent lenses                  ├── ProviderFactory/Registry
-├── Synthesizer (strict policy)           ├── Parallel orchestration
-└── Evidence linking                      └── Fallback chain + resilience
+│   ├── Dignity & Inclusion               ├── Parallel orchestration
+│   ├── Boundaries & Safety               └── Fallback chain + resilience
+│   ├── Restraint & Privacy
+│   ├── Transparency & Contestability
+│   └── Accountability & Ownership
+├── Synthesizer (strict policy)
+└── Evidence linking
 ```
 
-The core is always deterministic. The runtime adds optional LLM-assisted evaluation with circuit breakers, token budgets, and fallback strategies.
+The core is always deterministic. Lenses evaluate independently—they don't debate or persuade each other. Synthesis is policy, not intelligence.
+
+The runtime adds optional LLM-assisted evaluation with circuit breakers, token budgets, and fallback strategies.
+
+---
+
+## What Steward Is Not
+
+**Not an LLM-as-a-judge** — Steward doesn't ask a model "Is this good?" Criteria are human-authored and explicit. Models that grade themselves hide accountability.
+
+**Not a quality scorer** — Numeric scores hide boundary violations and encourage threshold gaming. Steward returns states, not numbers.
+
+**Not a recommendation engine** — ESCALATE presents options to humans without ranking them. Steward surfaces decisions, it doesn't make them.
+
+**Not a replacement for human judgment** — Steward identifies when human judgment is required. It never substitutes for it.
 
 ---
 
@@ -173,6 +194,38 @@ pip install steward
 # Node.js
 npm install @steward/core
 ```
+
+---
+
+## Context / Related Work
+
+### Policy and Governance Context
+
+The EU Cyber Resilience Act (CRA) introduces the concept of "open-source software stewards" as legal entities responsible for supporting the cybersecurity of FOSS used in commercial products. This governance model—and its implications for fairness, accountability, and transparency—was examined at [ACM FAccT 2025](https://dl.acm.org/doi/10.1145/3715275.3732032) as a novel but still ambiguous approach to software governance.
+
+### How Steward Differs
+
+Steward is not a policy role, certification body, or institutional steward.
+
+It is a **runtime governance primitive**.
+
+Where policy frameworks define *who* is responsible, Steward defines *how* responsibility is enforced at execution time:
+
+- Human-authored contracts, not implicit norms
+- Deterministic evaluation, not probabilistic judgment
+- Evidence-backed verdicts, not advisory signals
+- Explicit `accountable_human` fields, not diffuse responsibility
+
+Steward is designed to close the accountability gap that informal or institutional stewardship models may leave open—by enforcing governance *inside* agentic AI systems, not around them.
+
+### Relevant Sources
+
+| Source | Description |
+|--------|-------------|
+| [FAccT'25: Stewardship in FOSS Governance](https://dl.acm.org/doi/10.1145/3715275.3732032) | Tridgell & Singh examine "software stewards" under the EU CRA |
+| [EU Cyber Resilience Act](https://digital-strategy.ec.europa.eu/en/policies/cyber-resilience-act) | Regulation introducing cybersecurity requirements for digital products |
+| [Responsible AI Pattern Catalogue](https://dl.acm.org/doi/10.1145/3626234) | ACM collection of best practices for AI governance |
+| [Closing the AI Accountability Gap](https://dl.acm.org/doi/10.1145/3351095.3372873) | Raji et al. on internal algorithmic auditing frameworks |
 
 ---
 

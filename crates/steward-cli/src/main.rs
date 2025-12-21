@@ -241,7 +241,7 @@ fn print_text_result(result: &steward_core::EvaluationResult, explain: bool) {
             if !violation.evidence.is_empty() {
                 println!("Evidence:");
                 for e in &violation.evidence {
-                    println!("  - {}: {} ({})", e.claim, e.pointer, format!("{:?}", e.source));
+                    println!("  - {}: {} ({:?})", e.claim, e.pointer, e.source);
                 }
                 println!();
             }
