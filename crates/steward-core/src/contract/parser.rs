@@ -5,6 +5,27 @@ use std::fs;
 use std::path::Path;
 use thiserror::Error;
 
+/// Keywords that indicate a rule is dignity-related.
+/// Used to filter `never_optimize_away` and `must_escalate_when` rules.
+///
+/// This list is intentionally broad to capture various phrasings of dignity concepts.
+pub static DIGNITY_KEYWORDS: &[&str] = &[
+    // Core dignity concepts
+    "dignity",
+    "respect",
+    "dismiss",
+    // Pressure and coercion
+    "pressure",
+    "coercion",
+    // Human escalation requests
+    "human agent",
+    "human help",
+    "request human",
+    // General human-centered terms
+    "human",
+    "escalation",
+];
+
 /// Errors that can occur when parsing contracts.
 #[derive(Error, Debug)]
 pub enum ContractError {
@@ -137,15 +158,58 @@ pub struct Contract {
 
 impl Contract {
     /// Parse a contract from YAML string.
+    ///
+    /// Per spec section 7.3: "Every contract must validate against spec/contract.schema.json"
+    ///
+    /// This method:
+    /// 1. Validates the YAML against the JSON Schema
+    /// 2. Parses into the Contract struct
+    /// 3. Runs additional semantic validation
     pub fn from_yaml(yaml: &str) -> Result<Self, ContractError> {
+        // Parse YAML to serde_json::Value for schema validation
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(yaml)?;
+        let json_value: serde_json::Value = serde_json::from_str(
+            &serde_json::to_string(&yaml_value).map_err(|e| {
+                ContractError::ValidationError(format!("Failed to convert to JSON: {}", e))
+            })?,
+        )
+        .map_err(|e| ContractError::ValidationError(format!("JSON conversion failed: {}", e)))?;
+
+        // Validate against JSON Schema
+        if let Err(schema_errors) = super::schema::validate_contract_schema(&json_value) {
+            return Err(ContractError::ValidationError(format!(
+                "Schema validation failed: {}",
+                schema_errors.join("; ")
+            )));
+        }
+
+        // Parse into struct
         let contract: Contract = serde_yaml::from_str(yaml)?;
+
+        // Run additional semantic validation
         contract.validate()?;
         Ok(contract)
     }
 
     /// Parse a contract from JSON string.
+    ///
+    /// Per spec section 7.3: "Every contract must validate against spec/contract.schema.json"
     pub fn from_json(json: &str) -> Result<Self, ContractError> {
+        // Parse to Value for schema validation
+        let json_value: serde_json::Value = serde_json::from_str(json)?;
+
+        // Validate against JSON Schema
+        if let Err(schema_errors) = super::schema::validate_contract_schema(&json_value) {
+            return Err(ContractError::ValidationError(format!(
+                "Schema validation failed: {}",
+                schema_errors.join("; ")
+            )));
+        }
+
+        // Parse into struct
         let contract: Contract = serde_json::from_str(json)?;
+
+        // Run additional semantic validation
         contract.validate()?;
         Ok(contract)
     }
@@ -244,19 +308,39 @@ impl Contract {
     }
 
     /// Get all rules that should be evaluated by the Dignity lens.
+    ///
+    /// Per spec section 2.3:
+    /// - `acceptance.dignity_check[]`
+    /// - `boundaries.must_escalate_when[]` (dignity-related)
     pub fn dignity_rules(&self) -> Vec<&Rule> {
         let mut rules: Vec<&Rule> = self.acceptance.dignity_check.iter().collect();
 
         // Also include dignity-related rules from never_optimize_away
-        rules.extend(self.intent.never_optimize_away.iter().filter(|r| {
-            let text = r.rule.to_lowercase();
-            text.contains("dignity")
-                || text.contains("respect")
-                || text.contains("human")
-                || text.contains("escalation")
-        }));
+        rules.extend(
+            self.intent
+                .never_optimize_away
+                .iter()
+                .filter(|r| Self::is_dignity_related(&r.rule)),
+        );
+
+        // FIX-003: Include dignity-related rules from must_escalate_when
+        rules.extend(
+            self.boundaries
+                .must_escalate_when
+                .iter()
+                .filter(|r| Self::is_dignity_related(&r.rule)),
+        );
 
         rules
+    }
+
+    /// Check if a rule text contains dignity-related keywords.
+    ///
+    /// Uses the centralized `DIGNITY_KEYWORDS` list for consistent filtering
+    /// across all dignity-related rule detection.
+    fn is_dignity_related(rule_text: &str) -> bool {
+        let text = rule_text.to_lowercase();
+        DIGNITY_KEYWORDS.iter().any(|keyword| text.contains(keyword))
     }
 
     /// Get all rules that should be evaluated by the Transparency lens.
@@ -329,5 +413,42 @@ accountability:
             result,
             Err(ContractError::ValidationError(_))
         ));
+    }
+
+    // FIX-003: Dignity lens must evaluate must_escalate_when[] (dignity-related)
+    #[test]
+    fn test_dignity_rules_includes_escalation_rules() {
+        let yaml = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Customer support"
+boundaries:
+  must_escalate_when:
+    - id: "E1"
+      rule: "Customer explicitly requests human agent"
+    - id: "E2"
+      rule: "Legal question detected"
+accountability:
+  answerable_human: "test@example.com"
+acceptance:
+  dignity_check:
+    - id: "D1"
+      rule: "Preserves clear path to human help"
+"#;
+        let contract = Contract::from_yaml(yaml).unwrap();
+        let dignity_rules = contract.dignity_rules();
+
+        // Should include D1 (dignity_check)
+        assert!(dignity_rules.iter().any(|r| r.id == "D1"));
+
+        // Should include E1 (human agent request is dignity-related)
+        assert!(dignity_rules.iter().any(|r| r.id == "E1"),
+            "must_escalate_when with 'human agent' should be included in dignity rules");
+
+        // Should NOT include E2 (legal question is not dignity-related)
+        assert!(!dignity_rules.iter().any(|r| r.id == "E2"),
+            "must_escalate_when without dignity keywords should not be included");
     }
 }

@@ -14,6 +14,7 @@ mod accountability;
 mod boundaries;
 mod dignity;
 pub mod domain_patterns;
+pub mod patterns;
 mod restraint;
 mod transparency;
 

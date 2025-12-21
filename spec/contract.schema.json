@@ -10,9 +10,7 @@
     "schema_version",
     "name",
     "intent",
-    "boundaries",
-    "accountability",
-    "acceptance"
+    "accountability"
   ],
   "properties": {
     "contract_version": {

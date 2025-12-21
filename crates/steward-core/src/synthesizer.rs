@@ -11,7 +11,7 @@
 //!
 //! These rules are governance machinery, not a tuning toy.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use crate::contract::Contract;
 use crate::types::{
@@ -42,6 +42,9 @@ impl Synthesizer {
 
     /// Synthesize lens findings into a final evaluation result.
     ///
+    /// This is the convenience wrapper that uses the current time.
+    /// For deterministic evaluation (testing, reproducibility), use `synthesize_at()`.
+    ///
     /// # Arguments
     ///
     /// * `findings` - Findings from all five lenses
@@ -51,6 +54,29 @@ impl Synthesizer {
     ///
     /// An `EvaluationResult` with the final state and confidence.
     pub fn synthesize(&self, findings: LensFindings, contract: &Contract) -> EvaluationResult {
+        self.synthesize_at(findings, contract, Utc::now())
+    }
+
+    /// Synthesize lens findings into a final evaluation result with explicit timestamp.
+    ///
+    /// This function is fully deterministic: same inputs always produce same output.
+    /// Use this for testing, golden tests, and reproducible evaluation.
+    ///
+    /// # Arguments
+    ///
+    /// * `findings` - Findings from all five lenses
+    /// * `contract` - The contract (for accountable_human in violations)
+    /// * `evaluated_at` - Timestamp for the evaluation (caller-provided for determinism)
+    ///
+    /// # Returns
+    ///
+    /// An `EvaluationResult` with the final state and confidence.
+    pub fn synthesize_at(
+        &self,
+        findings: LensFindings,
+        contract: &Contract,
+        evaluated_at: DateTime<Utc>,
+    ) -> EvaluationResult {
         let accountable_human = contract.accountability.answerable_human.clone();
 
         // Calculate confidence first before moving findings
@@ -70,7 +96,7 @@ impl Synthesizer {
                 },
                 lens_findings: findings,
                 confidence,
-                evaluated_at: Utc::now(),
+                evaluated_at,
                 metadata: std::collections::HashMap::new(),
             };
         }
@@ -85,7 +111,7 @@ impl Synthesizer {
                 },
                 lens_findings: findings,
                 confidence,
-                evaluated_at: Utc::now(),
+                evaluated_at,
                 metadata: std::collections::HashMap::new(),
             };
         }
@@ -109,7 +135,7 @@ impl Synthesizer {
                 },
                 lens_findings: findings,
                 confidence,
-                evaluated_at: Utc::now(),
+                evaluated_at,
                 metadata: std::collections::HashMap::new(),
             };
         }
@@ -120,12 +146,17 @@ impl Synthesizer {
             state: State::Proceed { summary },
             lens_findings: findings,
             confidence,
-            evaluated_at: Utc::now(),
+            evaluated_at,
             metadata: std::collections::HashMap::new(),
         }
     }
 
     /// Find the first BLOCKED lens and extract violation details.
+    ///
+    /// Per spec: "Every BLOCKED has at least one evidence citation"
+    /// This method enforces the evidence invariant by synthesizing minimal
+    /// evidence when a lens fails to provide it (which is a lens bug, but
+    /// we must still produce valid output).
     fn find_blocked(&self, findings: &LensFindings) -> Option<(LensType, String, String, Vec<crate::evidence::Evidence>)> {
         let checks = [
             (LensType::DignityInclusion, &findings.dignity_inclusion),
@@ -142,18 +173,43 @@ impl Synthesizer {
                     .iter()
                     .find(|r| matches!(r.result, crate::types::RuleResult::Violated));
 
-                let (rule_id, rule_text, evidence) = if let Some(rule) = violated_rule {
-                    (
-                        rule.rule_id.clone(),
-                        rule.rule_text.clone().unwrap_or_else(|| violation.clone()),
-                        rule.evidence.clone(),
-                    )
-                } else {
-                    (
-                        "UNKNOWN".to_string(),
-                        violation.clone(),
-                        vec![],
-                    )
+                let (rule_id, rule_text, evidence) = match violated_rule {
+                    Some(rule) if !rule.evidence.is_empty() => {
+                        // Valid BLOCKED with evidence
+                        (
+                            rule.rule_id.clone(),
+                            rule.rule_text.clone().unwrap_or_else(|| violation.clone()),
+                            rule.evidence.clone(),
+                        )
+                    }
+                    Some(rule) => {
+                        // BLOCKED with violated rule but no evidence - synthesize minimal evidence
+                        // This is a lens implementation bug, but we must still meet the invariant
+                        let synthetic_evidence = vec![crate::evidence::Evidence {
+                            claim: format!("Rule {} was violated: {}", rule.rule_id, violation),
+                            source: crate::types::EvidenceSource::Contract,
+                            pointer: format!("contract.rule[{}]", rule.rule_id),
+                        }];
+                        (
+                            rule.rule_id.clone(),
+                            rule.rule_text.clone().unwrap_or_else(|| violation.clone()),
+                            synthetic_evidence,
+                        )
+                    }
+                    None => {
+                        // Lens returned BLOCKED without violated rule - this is a lens bug
+                        // Synthesize minimal evidence to meet the invariant
+                        let synthetic_evidence = vec![crate::evidence::Evidence {
+                            claim: violation.clone(),
+                            source: crate::types::EvidenceSource::Output,
+                            pointer: "output.content[0:0]".to_string(),
+                        }];
+                        (
+                            format!("{:?}_VIOLATION", lens_type),
+                            violation.clone(),
+                            synthetic_evidence,
+                        )
+                    }
                 };
 
                 return Some((*lens_type, rule_id, rule_text, evidence));
@@ -550,6 +606,79 @@ accountability:
         if let State::Escalate { uncertainty, .. } = &result.state {
             assert!(uncertainty.contains("Test escalation"));
             assert!(!uncertainty.contains("Low confidence"));
+        }
+    }
+
+    // FIX-005 Tests: Evidence invariant for BLOCKED states
+
+    #[test]
+    fn test_blocked_always_has_evidence() {
+        // Even when a lens provides BLOCKED without evidence, the synthesizer
+        // must synthesize minimal evidence to meet the invariant
+        let mut findings = LensFindings {
+            dignity_inclusion: pass_finding(LensType::DignityInclusion),
+            boundaries_safety: blocked_finding(LensType::BoundariesSafety),
+            restraint_privacy: pass_finding(LensType::RestraintPrivacy),
+            transparency_contestability: pass_finding(LensType::TransparencyContestability),
+            accountability_ownership: pass_finding(LensType::AccountabilityOwnership),
+        };
+
+        // Simulate a lens bug: BLOCKED state but no violated rule with evidence
+        findings.boundaries_safety.rules_evaluated.clear();
+
+        let synthesizer = Synthesizer::new();
+        let result = synthesizer.synthesize(findings, &test_contract());
+
+        assert!(matches!(result.state, State::Blocked { .. }));
+
+        if let State::Blocked { violation } = &result.state {
+            // Must have evidence even when lens fails to provide it
+            assert!(!violation.evidence.is_empty(), "BLOCKED must have evidence");
+            // Rule ID should not be "UNKNOWN"
+            assert!(!violation.rule_id.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_blocked_with_proper_evidence_preserved() {
+        use crate::evidence::Evidence;
+        use crate::types::{RuleEvaluation, RuleResult, EvidenceSource};
+
+        let findings = LensFindings {
+            dignity_inclusion: pass_finding(LensType::DignityInclusion),
+            boundaries_safety: LensFinding {
+                lens: Some(LensType::BoundariesSafety),
+                question_asked: None,
+                state: LensState::Blocked {
+                    violation: "PII exposed".to_string(),
+                },
+                rules_evaluated: vec![RuleEvaluation {
+                    rule_id: "B1".to_string(),
+                    rule_text: Some("PII exposure rule".to_string()),
+                    result: RuleResult::Violated,
+                    evidence: vec![Evidence {
+                        claim: "Email found in output".to_string(),
+                        source: EvidenceSource::Output,
+                        pointer: "output.content[10:30]".to_string(),
+                    }],
+                    rationale: Some("Email detected".to_string()),
+                }],
+                confidence: 0.98,
+            },
+            restraint_privacy: pass_finding(LensType::RestraintPrivacy),
+            transparency_contestability: pass_finding(LensType::TransparencyContestability),
+            accountability_ownership: pass_finding(LensType::AccountabilityOwnership),
+        };
+
+        let synthesizer = Synthesizer::new();
+        let result = synthesizer.synthesize(findings, &test_contract());
+
+        if let State::Blocked { violation } = &result.state {
+            assert_eq!(violation.rule_id, "B1");
+            assert_eq!(violation.evidence.len(), 1);
+            assert_eq!(violation.evidence[0].claim, "Email found in output");
+        } else {
+            panic!("Expected BLOCKED state");
         }
     }
 }

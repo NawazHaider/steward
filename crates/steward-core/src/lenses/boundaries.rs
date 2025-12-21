@@ -6,38 +6,18 @@
 //! for boundary violations including PII detection.
 
 use lazy_static::lazy_static;
-use regex::Regex;
 
 use crate::evidence::Evidence;
 use crate::types::{
     EvaluationRequest, LensFinding, LensState, LensType, RuleEvaluation, RuleResult,
 };
 
+use super::patterns::{
+    API_KEY_PATTERN, CREDIT_CARD_PATTERN, EMAIL_PATTERN, PHONE_PATTERN, SSN_PATTERN,
+};
 use super::Lens;
 
 lazy_static! {
-    // PII Detection Patterns
-    static ref EMAIL_PATTERN: Regex = Regex::new(
-        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-    ).unwrap();
-
-    static ref PHONE_PATTERN: Regex = Regex::new(
-        r"(?:\+?1[-.\s]?)?(?:\([0-9]{3}\)|[0-9]{3})[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}"
-    ).unwrap();
-
-    static ref SSN_PATTERN: Regex = Regex::new(
-        r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b"
-    ).unwrap();
-
-    static ref CREDIT_CARD_PATTERN: Regex = Regex::new(
-        r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b"
-    ).unwrap();
-
-    // API Key / Secret Patterns
-    static ref API_KEY_PATTERN: Regex = Regex::new(
-        r#"(?i)(api[_-]?key|secret|token|password|auth)[\s:=]+['"]?[a-zA-Z0-9_-]{20,}['"]?"#
-    ).unwrap();
-
     // Keywords for escalation conditions
     static ref FRUSTRATION_KEYWORDS: Vec<&'static str> = vec![
         "frustrated", "angry", "furious", "annoyed", "upset",
@@ -52,12 +32,20 @@ lazy_static! {
 
     static ref MEDICAL_KEYWORDS: Vec<&'static str> = vec![
         "symptom", "doctor", "hospital", "medicine", "medical",
-        "diagnosis", "treatment", "prescription", "health", "sick"
+        "diagnosis", "treatment", "prescription", "health", "sick",
+        "ibuprofen", "aspirin", "tylenol", "painkiller", "medication",
+        "headache", "migraine", "pain", "dosage", "therapy"
     ];
 
     static ref FINANCIAL_ADVICE_KEYWORDS: Vec<&'static str> = vec![
         "invest", "investment", "stock", "portfolio", "trading",
         "financial advice", "should i buy", "financial plan"
+    ];
+
+    // Scope detection for may_do_autonomously (out-of-scope patterns)
+    static ref INVESTMENT_ADVICE_PATTERNS: Vec<&'static str> = vec![
+        "invest", "investment", "buy stock", "sell stock", "portfolio",
+        "financial advice", "trading", "bitcoin", "crypto", "returns"
     ];
 }
 
@@ -122,6 +110,157 @@ impl BoundariesLens {
             (start, start + phrase.len())
         })
     }
+
+    /// Detect if content contains actual medical advice (not just medical terms).
+    /// Returns true only if both medical keywords AND advice-giving patterns are present.
+    fn contains_medical_advice(&self, content: &str) -> bool {
+        let lower = content.to_lowercase();
+
+        // Must have medical keywords
+        if !self.check_keywords(&lower, &MEDICAL_KEYWORDS) {
+            return false;
+        }
+
+        // AND must have advice-giving patterns
+        let advice_patterns = [
+            "you should", "i recommend", "i suggest", "take ",
+            "try ", "use ", "apply ", "don't ", "avoid ",
+            "dosage", "mg", "twice a day", "daily", "per day",
+        ];
+
+        advice_patterns.iter().any(|p| lower.contains(p))
+    }
+
+    /// Detect if content contains actual legal advice (not just legal terms).
+    fn contains_legal_advice(&self, content: &str) -> bool {
+        let lower = content.to_lowercase();
+
+        // Must have legal keywords
+        if !self.check_keywords(&lower, &LEGAL_KEYWORDS) {
+            return false;
+        }
+
+        // AND must have advice-giving patterns
+        let advice_patterns = [
+            "you should", "i advise", "i recommend", "legally",
+            "your rights", "you can sue", "file a complaint",
+            "you have the right", "you could pursue",
+        ];
+
+        advice_patterns.iter().any(|p| lower.contains(p))
+    }
+
+    /// Detect if content contains actual financial advice (not just financial terms).
+    fn contains_financial_advice(&self, content: &str) -> bool {
+        let lower = content.to_lowercase();
+
+        // Must have financial keywords
+        if !self.check_keywords(&lower, &FINANCIAL_ADVICE_KEYWORDS) {
+            return false;
+        }
+
+        // AND must have advice-giving patterns
+        let advice_patterns = [
+            "you should", "i recommend", "invest in", "buy ",
+            "sell ", "hold ", "returns", "profit", "growth",
+            "i suggest", "consider investing",
+        ];
+
+        advice_patterns.iter().any(|p| lower.contains(p))
+    }
+
+    /// Check if output stays within allowed autonomous scope.
+    /// Returns Some((rule_id, violation_description, evidence)) if output is OUT OF SCOPE.
+    ///
+    /// Per spec: "Output operates outside boundaries.may_do_autonomously[]" triggers BLOCKED.
+    fn check_autonomous_scope(
+        &self,
+        content: &str,
+        allowed_rules: &[crate::contract::Rule],
+    ) -> Option<(String, String, Vec<Evidence>)> {
+        // If no may_do_autonomously rules defined, everything is allowed (permissive default)
+        if allowed_rules.is_empty() {
+            return None;
+        }
+
+        let content_lower = content.to_lowercase();
+
+        // Check for content that falls OUTSIDE defined scope
+        // This is a negative check: we look for disallowed patterns
+
+        // Financial/investment advice check (unless explicitly allowed)
+        let allows_financial = allowed_rules.iter().any(|r| {
+            let text = r.rule.to_lowercase();
+            text.contains("financial") || text.contains("invest")
+        });
+
+        if !allows_financial && self.check_keywords(&content_lower, &INVESTMENT_ADVICE_PATTERNS) {
+            // Check if it's actually giving advice vs just mentioning
+            if self.appears_to_give_advice(content) {
+                let evidence = vec![Evidence::from_output(
+                    "Output contains financial/investment advice outside allowed scope",
+                    0,
+                    content.len().min(100),
+                )];
+                return Some((
+                    "SCOPE_VIOLATION".to_string(),
+                    "Output operates outside boundaries.may_do_autonomously[] - contains financial advice".to_string(),
+                    evidence,
+                ));
+            }
+        }
+
+        // Medical advice check (unless explicitly allowed)
+        let allows_medical = allowed_rules.iter().any(|r| {
+            let text = r.rule.to_lowercase();
+            text.contains("medical") || text.contains("health")
+        });
+
+        if !allows_medical && self.contains_medical_advice(content) {
+            let evidence = vec![Evidence::from_output(
+                "Output contains medical advice outside allowed scope",
+                0,
+                content.len().min(100),
+            )];
+            return Some((
+                "SCOPE_VIOLATION".to_string(),
+                "Output operates outside boundaries.may_do_autonomously[] - contains medical advice".to_string(),
+                evidence,
+            ));
+        }
+
+        // Legal advice check (unless explicitly allowed)
+        let allows_legal = allowed_rules.iter().any(|r| {
+            let text = r.rule.to_lowercase();
+            text.contains("legal")
+        });
+
+        if !allows_legal && self.contains_legal_advice(content) {
+            let evidence = vec![Evidence::from_output(
+                "Output contains legal advice outside allowed scope",
+                0,
+                content.len().min(100),
+            )];
+            return Some((
+                "SCOPE_VIOLATION".to_string(),
+                "Output operates outside boundaries.may_do_autonomously[] - contains legal advice".to_string(),
+                evidence,
+            ));
+        }
+
+        None
+    }
+
+    /// Heuristic: does the content appear to give advice vs just mention a topic?
+    fn appears_to_give_advice(&self, content: &str) -> bool {
+        let advice_patterns = [
+            "you should", "i recommend", "i suggest", "i advise",
+            "take this", "try this", "do this", "don't do",
+            "consider ", "my advice", "best option",
+        ];
+        let lower = content.to_lowercase();
+        advice_patterns.iter().any(|p| lower.contains(p))
+    }
 }
 
 impl Default for BoundariesLens {
@@ -143,6 +282,30 @@ impl Lens for BoundariesLens {
         let mut rules_evaluated = Vec::new();
         let mut blocked_violation: Option<(String, String, Vec<Evidence>)> = None;
         let mut escalate_reason: Option<String> = None;
+
+        // 0. Check may_do_autonomously FIRST (scope check)
+        // Per spec: "Output operates outside boundaries.may_do_autonomously[]" triggers BLOCKED
+        if let Some((rule_id, violation, evidence)) =
+            self.check_autonomous_scope(content, &contract.boundaries.may_do_autonomously)
+        {
+            rules_evaluated.push(RuleEvaluation {
+                rule_id: rule_id.clone(),
+                rule_text: Some(violation.clone()),
+                result: RuleResult::Violated,
+                evidence: evidence.clone(),
+                rationale: Some("Output operates outside defined autonomous scope".to_string()),
+            });
+
+            return LensFinding {
+                lens: Some(LensType::BoundariesSafety),
+                question_asked: Some(self.question().to_string()),
+                state: LensState::Blocked {
+                    violation: format!("{}: {}", rule_id, violation),
+                },
+                rules_evaluated,
+                confidence: 0.95,
+            };
+        }
 
         // 1. Check invalidated_by rules (most severe - triggers BLOCKED)
         for rule in &contract.boundaries.invalidated_by {
@@ -196,13 +359,13 @@ impl Lens for BoundariesLens {
                 }
             }
 
-            // Medical/legal/financial advice check
+            // Medical advice check - invalidated_by means BLOCKED when detected
             if rule_lower.contains("medical")
                 && rule_lower.contains("advice")
-                && self.check_keywords(content, &MEDICAL_KEYWORDS)
+                && self.contains_medical_advice(content)
             {
                 let evidence = vec![Evidence::from_output(
-                    "Medical-related content detected",
+                    "Medical advice detected in response",
                     0,
                     content.len().min(100),
                 )];
@@ -210,18 +373,59 @@ impl Lens for BoundariesLens {
                 rules_evaluated.push(RuleEvaluation {
                     rule_id: rule.id.clone(),
                     rule_text: Some(rule.rule.clone()),
-                    result: RuleResult::Uncertain,
+                    result: RuleResult::Violated,
                     evidence: evidence.clone(),
-                    rationale: Some("Content may contain medical advice".to_string()),
+                    rationale: Some("Output contains medical advice which invalidates automation".to_string()),
                 });
 
-                // This is uncertain, so escalate rather than block
-                if escalate_reason.is_none() {
-                    escalate_reason = Some(format!(
-                        "Possible medical content detected (rule {})",
-                        rule.id
-                    ));
-                }
+                blocked_violation = Some((rule.id.clone(), rule.rule.clone(), evidence));
+                break;
+            }
+
+            // Legal advice check - invalidated_by means BLOCKED when detected
+            if rule_lower.contains("legal")
+                && rule_lower.contains("advice")
+                && self.contains_legal_advice(content)
+            {
+                let evidence = vec![Evidence::from_output(
+                    "Legal advice detected in response",
+                    0,
+                    content.len().min(100),
+                )];
+
+                rules_evaluated.push(RuleEvaluation {
+                    rule_id: rule.id.clone(),
+                    rule_text: Some(rule.rule.clone()),
+                    result: RuleResult::Violated,
+                    evidence: evidence.clone(),
+                    rationale: Some("Output contains legal advice which invalidates automation".to_string()),
+                });
+
+                blocked_violation = Some((rule.id.clone(), rule.rule.clone(), evidence));
+                break;
+            }
+
+            // Financial advice check - invalidated_by means BLOCKED when detected
+            if rule_lower.contains("financial")
+                && rule_lower.contains("advice")
+                && self.contains_financial_advice(content)
+            {
+                let evidence = vec![Evidence::from_output(
+                    "Financial advice detected in response",
+                    0,
+                    content.len().min(100),
+                )];
+
+                rules_evaluated.push(RuleEvaluation {
+                    rule_id: rule.id.clone(),
+                    rule_text: Some(rule.rule.clone()),
+                    result: RuleResult::Violated,
+                    evidence: evidence.clone(),
+                    rationale: Some("Output contains financial advice which invalidates automation".to_string()),
+                });
+
+                blocked_violation = Some((rule.id.clone(), rule.rule.clone(), evidence));
+                break;
             }
 
             // If not matched, mark as satisfied
@@ -518,5 +722,228 @@ accountability:
         let finding = lens.evaluate(&request);
 
         assert!(finding.state.is_escalate());
+    }
+
+    // FIX-002 Tests: invalidated_by must always return BLOCKED
+
+    #[test]
+    fn test_medical_advice_blocked_not_escalated() {
+        let contract = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Customer support"
+boundaries:
+  invalidated_by:
+    - id: "B2"
+      rule: "Medical advice given"
+accountability:
+  answerable_human: "test@example.com"
+"#;
+        let request = create_test_request(
+            contract,
+            "You should take 400mg of ibuprofen twice daily for your headache."
+        );
+        let lens = BoundariesLens::new();
+        let finding = lens.evaluate(&request);
+
+        assert!(finding.state.is_blocked(), "Medical advice should BLOCK, not ESCALATE");
+
+        // Verify correct rule is cited
+        let violated = finding.rules_evaluated.iter()
+            .find(|r| r.result == RuleResult::Violated);
+        assert!(violated.is_some());
+        assert_eq!(violated.unwrap().rule_id, "B2");
+    }
+
+    #[test]
+    fn test_medical_mention_without_advice_passes() {
+        let contract = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Customer support"
+boundaries:
+  invalidated_by:
+    - id: "B2"
+      rule: "Medical advice given"
+accountability:
+  answerable_human: "test@example.com"
+"#;
+        let request = create_test_request(
+            contract,
+            "For medical questions, please consult your doctor."
+        );
+        let lens = BoundariesLens::new();
+        let finding = lens.evaluate(&request);
+
+        // Mentioning medical topics without giving advice is fine
+        assert!(!finding.state.is_blocked(), "Medical mention should not BLOCK");
+    }
+
+    #[test]
+    fn test_legal_advice_blocked() {
+        let contract = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Customer support"
+boundaries:
+  invalidated_by:
+    - id: "B2"
+      rule: "Legal advice given"
+accountability:
+  answerable_human: "test@example.com"
+"#;
+        let request = create_test_request(
+            contract,
+            "I advise you to sue the company for breach of contract. You have the right to pursue damages."
+        );
+        let lens = BoundariesLens::new();
+        let finding = lens.evaluate(&request);
+
+        assert!(finding.state.is_blocked(), "Legal advice should BLOCK");
+    }
+
+    #[test]
+    fn test_financial_advice_blocked() {
+        let contract = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Customer support"
+boundaries:
+  invalidated_by:
+    - id: "B3"
+      rule: "Financial advice given"
+accountability:
+  answerable_human: "test@example.com"
+"#;
+        let request = create_test_request(
+            contract,
+            "I recommend you invest in Bitcoin. The returns have been excellent."
+        );
+        let lens = BoundariesLens::new();
+        let finding = lens.evaluate(&request);
+
+        assert!(finding.state.is_blocked(), "Financial advice should BLOCK");
+
+        let violated = finding.rules_evaluated.iter()
+            .find(|r| r.result == RuleResult::Violated);
+        assert!(violated.is_some());
+        assert_eq!(violated.unwrap().rule_id, "B3");
+    }
+
+    // FIX-001 Tests: may_do_autonomously scope checking
+
+    #[test]
+    fn test_output_within_scope_proceeds() {
+        let contract = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Customer support"
+boundaries:
+  may_do_autonomously:
+    - id: "A1"
+      rule: "Answer factual questions about products"
+    - id: "A2"
+      rule: "Provide order status"
+accountability:
+  answerable_human: "test@example.com"
+"#;
+        let request = create_test_request(
+            contract,
+            "Your order #12345 shipped yesterday. It should arrive within 3-5 business days."
+        );
+        let lens = BoundariesLens::new();
+        let finding = lens.evaluate(&request);
+
+        assert!(finding.state.is_pass(), "In-scope output should PASS");
+    }
+
+    #[test]
+    fn test_financial_advice_outside_scope_blocked() {
+        let contract = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Customer support"
+boundaries:
+  may_do_autonomously:
+    - id: "A1"
+      rule: "Answer factual questions about products"
+accountability:
+  answerable_human: "test@example.com"
+"#;
+        let request = create_test_request(
+            contract,
+            "I recommend you invest in Bitcoin for maximum returns."
+        );
+        let lens = BoundariesLens::new();
+        let finding = lens.evaluate(&request);
+
+        assert!(finding.state.is_blocked(), "Financial advice outside scope should BLOCK");
+
+        // Verify it's a scope violation
+        let violated = finding.rules_evaluated.iter()
+            .find(|r| r.result == RuleResult::Violated);
+        assert!(violated.is_some());
+        assert_eq!(violated.unwrap().rule_id, "SCOPE_VIOLATION");
+    }
+
+    #[test]
+    fn test_empty_may_do_autonomously_allows_all() {
+        let contract = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Test"
+boundaries: {}
+accountability:
+  answerable_human: "test@example.com"
+"#;
+        let request = create_test_request(
+            contract,
+            "I recommend you invest in Bitcoin. Buy stocks. Trade crypto."
+        );
+        let lens = BoundariesLens::new();
+        let finding = lens.evaluate(&request);
+
+        // Empty may_do_autonomously means no scope restrictions (permissive default)
+        assert!(finding.state.is_pass(), "Empty scope should not block");
+    }
+
+    #[test]
+    fn test_scope_allows_financial_when_explicitly_permitted() {
+        let contract = r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Financial advisory"
+boundaries:
+  may_do_autonomously:
+    - id: "A1"
+      rule: "Provide financial advice and investment recommendations"
+accountability:
+  answerable_human: "test@example.com"
+"#;
+        let request = create_test_request(
+            contract,
+            "I recommend you invest in a diversified portfolio for better returns."
+        );
+        let lens = BoundariesLens::new();
+        let finding = lens.evaluate(&request);
+
+        // Financial advice is explicitly allowed
+        assert!(finding.state.is_pass(), "Financial advice should PASS when explicitly allowed");
     }
 }

@@ -205,4 +205,205 @@ accountability:
 
         assert!(finding.state.is_escalate());
     }
+
+    #[test]
+    fn test_missing_approved_by_escalates() {
+        let contract = Contract::from_yaml(r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Test"
+accountability:
+  answerable_human: "test@example.com"
+  escalation_path:
+    - "Tier 1"
+"#).unwrap();
+
+        let request = EvaluationRequest {
+            contract,
+            output: Output::text("Test output"),
+            context: None,
+            metadata: None,
+        };
+
+        let lens = AccountabilityLens::new();
+        let finding = lens.evaluate(&request);
+
+        assert!(finding.state.is_escalate());
+        if let LensState::Escalate { reason } = &finding.state {
+            assert!(reason.contains("approval"), "Should mention missing approval");
+        }
+    }
+
+    #[test]
+    fn test_both_missing_escalates_with_combined_reason() {
+        let contract = Contract::from_yaml(r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Test"
+accountability:
+  answerable_human: "test@example.com"
+"#).unwrap();
+
+        let request = EvaluationRequest {
+            contract,
+            output: Output::text("Test output"),
+            context: None,
+            metadata: None,
+        };
+
+        let lens = AccountabilityLens::new();
+        let finding = lens.evaluate(&request);
+
+        assert!(finding.state.is_escalate());
+        if let LensState::Escalate { reason } = &finding.state {
+            // Should contain both issues
+            assert!(reason.contains("escalation"), "Should mention missing escalation path");
+            assert!(reason.contains("approval"), "Should mention missing approval");
+        }
+    }
+
+    #[test]
+    fn test_single_level_escalation_path_passes() {
+        let contract = Contract::from_yaml(r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Test"
+accountability:
+  approved_by: "Product Owner"
+  answerable_human: "support@example.com"
+  escalation_path:
+    - "Manager"
+"#).unwrap();
+
+        let request = EvaluationRequest {
+            contract,
+            output: Output::text("Test output"),
+            context: None,
+            metadata: None,
+        };
+
+        let lens = AccountabilityLens::new();
+        let finding = lens.evaluate(&request);
+
+        assert!(finding.state.is_pass(), "Single-level escalation path should be valid");
+        assert!(finding.confidence > 0.9);
+    }
+
+    #[test]
+    fn test_review_cadence_included() {
+        let contract = Contract::from_yaml(r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Test"
+accountability:
+  approved_by: "Manager"
+  answerable_human: "test@example.com"
+  escalation_path:
+    - "Tier 1"
+    - "Tier 2"
+  review_cadence: "monthly"
+"#).unwrap();
+
+        let request = EvaluationRequest {
+            contract,
+            output: Output::text("Test output"),
+            context: None,
+            metadata: None,
+        };
+
+        let lens = AccountabilityLens::new();
+        let finding = lens.evaluate(&request);
+
+        assert!(finding.state.is_pass());
+        // Verify review_cadence is parsed (it's metadata, doesn't affect pass/fail)
+        assert_eq!(
+            request.contract.accountability.review_cadence,
+            Some("monthly".to_string())
+        );
+    }
+
+    #[test]
+    fn test_all_rules_evaluated() {
+        let contract = Contract::from_yaml(r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Test"
+intent:
+  purpose: "Test"
+accountability:
+  approved_by: "Manager"
+  answerable_human: "test@example.com"
+  escalation_path:
+    - "Tier 1"
+"#).unwrap();
+
+        let request = EvaluationRequest {
+            contract,
+            output: Output::text("Test output"),
+            context: None,
+            metadata: None,
+        };
+
+        let lens = AccountabilityLens::new();
+        let finding = lens.evaluate(&request);
+
+        // Should evaluate all 3 accountability rules
+        assert_eq!(finding.rules_evaluated.len(), 3, "Should evaluate ACC1, ACC2, ACC3");
+
+        let rule_ids: Vec<&str> = finding.rules_evaluated.iter()
+            .map(|r| r.rule_id.as_str())
+            .collect();
+        assert!(rule_ids.contains(&"ACC1"), "Should evaluate answerable_human");
+        assert!(rule_ids.contains(&"ACC2"), "Should evaluate escalation_path");
+        assert!(rule_ids.contains(&"ACC3"), "Should evaluate approved_by");
+    }
+
+    #[test]
+    fn test_deep_escalation_path() {
+        let contract = Contract::from_yaml(r#"
+contract_version: "1.0"
+schema_version: "2025-12-20"
+name: "Enterprise Support"
+intent:
+  purpose: "Handle enterprise customer requests"
+accountability:
+  approved_by: "VP of Engineering"
+  answerable_human: "enterprise-support@company.com"
+  escalation_path:
+    - "Tier 1 Support"
+    - "Tier 2 Support"
+    - "Engineering Lead"
+    - "Director of Engineering"
+    - "VP of Engineering"
+"#).unwrap();
+
+        let request = EvaluationRequest {
+            contract,
+            output: Output::text("Test output"),
+            context: None,
+            metadata: None,
+        };
+
+        let lens = AccountabilityLens::new();
+        let finding = lens.evaluate(&request);
+
+        assert!(finding.state.is_pass());
+
+        // Check the rationale mentions the number of levels
+        let acc2_rule = finding.rules_evaluated.iter()
+            .find(|r| r.rule_id == "ACC2")
+            .expect("Should have ACC2 rule");
+        assert!(
+            acc2_rule.rationale.as_ref().unwrap().contains("5 levels"),
+            "Should note 5 escalation levels"
+        );
+    }
 }

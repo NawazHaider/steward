@@ -49,6 +49,7 @@ pub use types::{
     LensFindings, LensType, Output, RuleEvaluation, RuleResult, State,
 };
 
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -85,6 +86,28 @@ pub fn evaluate(contract: &Contract, output: &Output) -> Result<EvaluationResult
     evaluate_with_context(contract, output, None, None)
 }
 
+/// Evaluate an output with explicit timestamp for deterministic results.
+///
+/// This function is fully deterministic: same inputs always produce same output.
+/// Use this for testing, golden tests, and reproducible evaluation.
+///
+/// # Arguments
+///
+/// * `contract` - The stewardship contract defining rules
+/// * `output` - The AI-generated output to evaluate
+/// * `evaluated_at` - Timestamp to use for the evaluation
+///
+/// # Returns
+///
+/// An `EvaluationResult` with deterministic output.
+pub fn evaluate_at(
+    contract: &Contract,
+    output: &Output,
+    evaluated_at: DateTime<Utc>,
+) -> Result<EvaluationResult, EvaluationError> {
+    evaluate_with_context_at(contract, output, None, None, evaluated_at)
+}
+
 /// Evaluate with optional context and metadata.
 ///
 /// # Arguments
@@ -98,6 +121,28 @@ pub fn evaluate_with_context(
     output: &Output,
     context: Option<&[String]>,
     metadata: Option<&HashMap<String, String>>,
+) -> Result<EvaluationResult, EvaluationError> {
+    evaluate_with_context_at(contract, output, context, metadata, Utc::now())
+}
+
+/// Evaluate with optional context, metadata, and explicit timestamp.
+///
+/// This function is fully deterministic: same inputs always produce same output.
+/// Use this for testing, golden tests, and reproducible evaluation.
+///
+/// # Arguments
+///
+/// * `contract` - The stewardship contract
+/// * `output` - The AI-generated output
+/// * `context` - Optional context the AI had access to
+/// * `metadata` - Optional metadata for the evaluation
+/// * `evaluated_at` - Timestamp to use for the evaluation
+pub fn evaluate_with_context_at(
+    contract: &Contract,
+    output: &Output,
+    context: Option<&[String]>,
+    metadata: Option<&HashMap<String, String>>,
+    evaluated_at: DateTime<Utc>,
 ) -> Result<EvaluationResult, EvaluationError> {
     // Create evaluation request
     let request = EvaluationRequest {
@@ -124,9 +169,9 @@ pub fn evaluate_with_context(
         accountability_ownership: accountability_finding,
     };
 
-    // Synthesize final result
+    // Synthesize final result with explicit timestamp
     let synthesizer = Synthesizer::new();
-    let result = synthesizer.synthesize(findings, contract);
+    let result = synthesizer.synthesize_at(findings, contract, evaluated_at);
 
     Ok(result)
 }

@@ -16,13 +16,8 @@
 //!
 //! ## Built-in Patterns
 //!
-//! | Category | Pattern |
-//! |----------|---------|
-//! | Email | RFC 5322 compliant patterns |
-//! | Phone | International and US formats |
-//! | SSN | US Social Security Number format |
-//! | Credit Card | Major card formats (Visa, MC, Amex, etc.) |
-//! | API Key | Common API key and secret patterns |
+//! Shared patterns from `patterns` module: Email, Phone, SSN, Credit Card, API Key, AWS Key.
+//! Restraint-specific patterns: Address, DOB, Private Key, DB Connection.
 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -33,25 +28,14 @@ use crate::types::{
 };
 
 use super::domain_patterns::{check_domain_patterns, DomainMatch, PatternSeverity};
+use super::patterns::{
+    API_KEY_PATTERN, AWS_KEY_PATTERN, CREDIT_CARD_PATTERN, EMAIL_PATTERN, PHONE_PATTERN,
+    SSN_PATTERN,
+};
 use super::Lens;
 
 lazy_static! {
-    // PII Detection Patterns
-    static ref EMAIL_PATTERN: Regex = Regex::new(
-        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-    ).unwrap();
-
-    static ref PHONE_PATTERN: Regex = Regex::new(
-        r"(?:\+?1[-.\s]?)?(?:\([0-9]{3}\)|[0-9]{3})[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}"
-    ).unwrap();
-
-    static ref SSN_PATTERN: Regex = Regex::new(
-        r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b"
-    ).unwrap();
-
-    static ref CREDIT_CARD_PATTERN: Regex = Regex::new(
-        r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b"
-    ).unwrap();
+    // Restraint-specific patterns (not shared with other lenses)
 
     // Address pattern (basic - street address)
     static ref ADDRESS_PATTERN: Regex = Regex::new(
@@ -61,16 +45,6 @@ lazy_static! {
     // Date of birth pattern (common formats)
     static ref DOB_PATTERN: Regex = Regex::new(
         r"(?i)\b(date of birth|dob|born on|birthday)[:\s]+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b"
-    ).unwrap();
-
-    // API Key / Secret Patterns
-    static ref API_KEY_PATTERN: Regex = Regex::new(
-        r#"(?i)(api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|bearer|password)[\s:=]+['"]?[a-zA-Z0-9_-]{16,}['"]?"#
-    ).unwrap();
-
-    // AWS-style credentials
-    static ref AWS_KEY_PATTERN: Regex = Regex::new(
-        r"(?i)(AKIA|ABIA|ACCA|AGPA|AIDA|AIPA|ANPA|ANVA|AROA|ASCA|ASIA)[A-Z0-9]{16}"
     ).unwrap();
 
     // Private key patterns
