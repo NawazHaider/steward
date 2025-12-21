@@ -2,15 +2,21 @@
 //!
 //! Supports Claude 4.5 family with prompt caching.
 
-use super::{ChatMessage, CompletionConfig, CompletionResponse, LlmProvider, ProviderError, TokenUsage};
+use super::{
+    factory::ProviderFactory, ChatMessage, CompletionConfig, CompletionResponse, LlmProvider,
+    ProviderError, TokenUsage,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Anthropic Claude provider.
 pub struct AnthropicProvider {
     api_key: String,
     base_url: String,
+    #[allow(dead_code)] // Reserved for future connection pooling
     client: Option<reqwest::Client>,
 }
 
@@ -99,6 +105,7 @@ struct AnthropicResponse {
 #[derive(Debug, Deserialize)]
 struct ContentBlockResponse {
     #[serde(rename = "type")]
+    #[allow(dead_code)] // Required for deserialization, not read directly
     type_: String,
     text: Option<String>,
 }
@@ -121,6 +128,7 @@ struct AnthropicError {
 #[derive(Debug, Deserialize)]
 struct AnthropicErrorDetail {
     #[serde(rename = "type")]
+    #[allow(dead_code)] // Required for deserialization, not read directly
     type_: String,
     message: String,
 }
@@ -267,6 +275,83 @@ impl LlmProvider for AnthropicProvider {
     }
 }
 
+/// Factory for creating Anthropic providers from configuration.
+///
+/// ## Configuration Format
+/// ```json
+/// {
+///   "api_key": "sk-ant-...",           // Optional, falls back to ANTHROPIC_API_KEY env
+///   "base_url": "https://...",          // Optional, custom API endpoint
+///   "model": "claude-sonnet-4-5-20250514",  // Optional, default model
+///   "prompt_caching": true              // Optional, enable prompt caching
+/// }
+/// ```
+pub struct AnthropicProviderFactory;
+
+impl ProviderFactory for AnthropicProviderFactory {
+    fn provider_type(&self) -> &'static str {
+        "anthropic"
+    }
+
+    fn create(&self, config: &JsonValue) -> Result<Arc<dyn LlmProvider>, ProviderError> {
+        // Get API key from config or environment
+        let api_key = config["api_key"]
+            .as_str()
+            .map(String::from)
+            .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+            .ok_or_else(|| {
+                ProviderError::NotConfigured(
+                    "Anthropic API key required: set 'api_key' in config or ANTHROPIC_API_KEY env"
+                        .to_string(),
+                )
+            })?;
+
+        let mut provider = AnthropicProvider::new(api_key);
+
+        // Apply optional base URL
+        if let Some(base_url) = config["base_url"].as_str() {
+            provider = provider.with_base_url(base_url);
+        }
+
+        Ok(Arc::new(provider))
+    }
+
+    fn validate_config(&self, config: &JsonValue) -> Result<(), ProviderError> {
+        // API key is optional in config if env var is set
+        let has_api_key = config["api_key"].as_str().is_some()
+            || std::env::var("ANTHROPIC_API_KEY").is_ok();
+
+        if !has_api_key {
+            return Err(ProviderError::NotConfigured(
+                "Anthropic API key required: set 'api_key' in config or ANTHROPIC_API_KEY env"
+                    .to_string(),
+            ));
+        }
+
+        // Validate base_url if present
+        if let Some(url) = config["base_url"].as_str() {
+            if !url.starts_with("http://") && !url.starts_with("https://") {
+                return Err(ProviderError::NotConfigured(
+                    "base_url must start with http:// or https://".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn default_config(&self) -> JsonValue {
+        serde_json::json!({
+            "model": "claude-sonnet-4-5-20250514",
+            "prompt_caching": true
+        })
+    }
+
+    fn description(&self) -> &'static str {
+        "Anthropic Claude provider with prompt caching support"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,5 +368,47 @@ mod tests {
         let text = "Hello, world!"; // 13 chars
         let estimate = provider.estimate_tokens(text);
         assert!(estimate >= 2 && estimate <= 5);
+    }
+
+    #[test]
+    fn test_factory_provider_type() {
+        let factory = AnthropicProviderFactory;
+        assert_eq!(factory.provider_type(), "anthropic");
+    }
+
+    #[test]
+    fn test_factory_default_config() {
+        let factory = AnthropicProviderFactory;
+        let config = factory.default_config();
+        assert_eq!(config["model"], "claude-sonnet-4-5-20250514");
+        assert_eq!(config["prompt_caching"], true);
+    }
+
+    #[test]
+    fn test_factory_description() {
+        let factory = AnthropicProviderFactory;
+        assert!(factory.description().contains("Anthropic"));
+    }
+
+    #[test]
+    fn test_factory_create_with_api_key() {
+        let factory = AnthropicProviderFactory;
+        let config = serde_json::json!({
+            "api_key": "test-api-key"
+        });
+        let provider = factory.create(&config);
+        assert!(provider.is_ok());
+        assert_eq!(provider.unwrap().name(), "anthropic");
+    }
+
+    #[test]
+    fn test_factory_validate_invalid_base_url() {
+        let factory = AnthropicProviderFactory;
+        let config = serde_json::json!({
+            "api_key": "test-key",
+            "base_url": "invalid-url"
+        });
+        let result = factory.validate_config(&config);
+        assert!(result.is_err());
     }
 }

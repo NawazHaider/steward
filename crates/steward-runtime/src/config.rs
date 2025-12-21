@@ -1,12 +1,12 @@
 //! Configuration for steward-runtime.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::Duration;
 use steward_core::LensType;
 
-use crate::providers::ProviderType;
 use crate::resilience::{CircuitBreakerConfig, FallbackStrategy};
+use serde_json::Value as JsonValue;
 
 /// Runtime configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,9 +51,9 @@ pub struct RuntimeConfig {
     #[serde(default)]
     pub verification: VerificationConfig,
 
-    /// Provider configurations
+    /// Provider configurations (BTreeMap for deterministic iteration)
     #[serde(default)]
-    pub providers: HashMap<String, ProviderConfig>,
+    pub providers: BTreeMap<String, ProviderConfig>,
 
     /// Fallback chain
     #[serde(default)]
@@ -81,7 +81,7 @@ impl Default for RuntimeConfig {
             early_termination: EarlyTerminationConfig::default(),
             prompt_caching: PromptCachingConfig::default(),
             verification: VerificationConfig::default(),
-            providers: HashMap::new(),
+            providers: BTreeMap::new(),
             fallback: vec![
                 FallbackStrategy::Cache,
                 FallbackStrategy::SimplerModel {
@@ -129,9 +129,9 @@ pub struct TimeoutConfig {
     #[serde(with = "humantime_serde", default = "default_llm_timeout")]
     pub llm_call: Duration,
 
-    /// Per-lens timeout overrides
+    /// Per-lens timeout overrides (BTreeMap for deterministic iteration)
     #[serde(default)]
-    pub per_lens: HashMap<LensType, Duration>,
+    pub per_lens: BTreeMap<LensType, Duration>,
 }
 
 fn default_global_timeout() -> Duration {
@@ -152,7 +152,7 @@ impl Default for TimeoutConfig {
             global: Duration::from_secs(30),
             lens_default: Duration::from_secs(10),
             llm_call: Duration::from_secs(15),
-            per_lens: HashMap::new(),
+            per_lens: BTreeMap::new(),
         }
     }
 }
@@ -164,9 +164,9 @@ pub struct BudgetConfig {
     #[serde(default = "default_global_budget")]
     pub global_max_tokens: u32,
 
-    /// Per-lens budgets
+    /// Per-lens budgets (BTreeMap for deterministic iteration)
     #[serde(default)]
-    pub per_lens: HashMap<LensType, u32>,
+    pub per_lens: BTreeMap<LensType, u32>,
 }
 
 fn default_global_budget() -> u32 {
@@ -175,12 +175,13 @@ fn default_global_budget() -> u32 {
 
 impl Default for BudgetConfig {
     fn default() -> Self {
-        let mut per_lens = HashMap::new();
-        per_lens.insert(LensType::DignityInclusion, 1000);
+        let mut per_lens = BTreeMap::new();
+        // Alphabetical order to match LensType's Ord implementation
+        per_lens.insert(LensType::AccountabilityOwnership, 500);
         per_lens.insert(LensType::BoundariesSafety, 1000);
+        per_lens.insert(LensType::DignityInclusion, 1000);
         per_lens.insert(LensType::RestraintPrivacy, 500);
         per_lens.insert(LensType::TransparencyContestability, 1500);
-        per_lens.insert(LensType::AccountabilityOwnership, 500);
 
         Self {
             global_max_tokens: 5000,
@@ -397,31 +398,18 @@ pub enum DisagreementStrategy {
 }
 
 /// Provider configuration.
+///
+/// Uses JSON value for provider-specific settings, validated by ProviderFactory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
-    /// Provider type
+    /// Provider type identifier (e.g., "anthropic", "openai", "local")
+    #[serde(rename = "type")]
+    pub provider_type: String,
+
+    /// Provider-specific configuration as JSON
+    /// Validated by the corresponding ProviderFactory
     #[serde(flatten)]
-    pub provider_type: ProviderType,
-
-    /// API key environment variable
-    #[serde(default)]
-    pub api_key_env: Option<String>,
-
-    /// Maximum tokens
-    #[serde(default = "default_max_tokens")]
-    pub max_tokens: u32,
-
-    /// Temperature
-    #[serde(default)]
-    pub temperature: f32,
-
-    /// Enable prompt caching
-    #[serde(default = "default_true")]
-    pub prompt_caching: bool,
-}
-
-fn default_max_tokens() -> u32 {
-    500
+    pub settings: JsonValue,
 }
 
 // Custom serialization for Duration using humantime format

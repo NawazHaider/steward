@@ -16,9 +16,10 @@ use steward_core::{
 };
 
 use crate::agents::{AgentError, LensAgent};
+use crate::cache::{CacheKey, EvaluationCache};
 use crate::config::RuntimeConfig;
 use crate::providers::LlmProvider;
-use crate::resilience::{BudgetTracker, CircuitBreaker, LlmUsage};
+use crate::resilience::{BudgetTracker, CircuitBreaker, FallbackStrategy, LlmUsage};
 
 /// Errors from the runtime orchestrator.
 #[derive(Error, Debug)]
@@ -37,6 +38,9 @@ pub enum RuntimeError {
 
     #[error("All fallbacks exhausted")]
     AllFallbacksExhausted,
+
+    #[error("Cache miss")]
+    CacheMiss,
 
     #[error("Agent error: {0}")]
     Agent(#[from] AgentError),
@@ -61,7 +65,7 @@ pub struct RuntimeResult {
 /// - Parallel fan-out: All 5 lenses execute concurrently via tokio::join!
 /// - Deterministic fan-in: Synthesizer applies strict policy rules
 /// - Resilience: Circuit breaker, budget, timeout per lens
-/// - Fallback: On LLM failure, falls back to deterministic evaluation
+/// - Fallback chain: Cache → Simpler Model → Deterministic → Escalate
 pub struct RuntimeOrchestrator {
     /// LLM provider (used by registered agents)
     #[allow(dead_code)]
@@ -76,6 +80,9 @@ pub struct RuntimeOrchestrator {
     /// Token budget tracker
     budget_tracker: BudgetTracker,
 
+    /// Evaluation cache for fallback
+    cache: EvaluationCache,
+
     /// Lens agents (one per lens type)
     agents: Vec<Arc<dyn LensAgent>>,
 
@@ -87,9 +94,15 @@ impl RuntimeOrchestrator {
     /// Create a new runtime orchestrator.
     pub fn new(provider: Arc<dyn LlmProvider>, config: RuntimeConfig) -> Self {
         let circuit_breaker = CircuitBreaker::new(config.circuit_breaker.clone());
-        let budget_tracker = BudgetTracker::new(
+        // Use config-driven per-lens budgets instead of hardcoded default
+        let budget_tracker = BudgetTracker::with_lens_budgets(
             config.budgets.global_max_tokens,
-            1000, // Default per-lens
+            config.budgets.per_lens.clone(),
+        );
+        // Initialize cache from config
+        let cache = EvaluationCache::new(
+            config.cache.max_entries as u64,
+            config.cache.ttl,
         );
 
         Self {
@@ -97,6 +110,7 @@ impl RuntimeOrchestrator {
             config,
             circuit_breaker,
             budget_tracker,
+            cache,
             agents: Vec::new(),
             synthesizer: Synthesizer::new(),
         }
@@ -164,15 +178,15 @@ impl RuntimeOrchestrator {
     ) -> Result<LensFinding, RuntimeError> {
         // Check circuit breaker
         if self.circuit_breaker.is_open(lens) {
-            tracing::warn!(lens = ?lens, "Circuit open, falling back to deterministic");
-            return self.fallback_to_deterministic(lens, request);
+            tracing::warn!(lens = ?lens, "Circuit open, executing fallback chain");
+            return self.execute_fallback_chain(lens, request).await;
         }
 
         // Check budget
         let estimated_tokens = 500; // Conservative estimate
         if !self.budget_tracker.can_afford(lens, estimated_tokens) {
-            tracing::warn!(lens = ?lens, "Budget exceeded, falling back to deterministic");
-            return self.fallback_to_deterministic(lens, request);
+            tracing::warn!(lens = ?lens, "Budget exceeded, executing fallback chain");
+            return self.execute_fallback_chain(lens, request).await;
         }
 
         // Apply timeout
@@ -180,18 +194,26 @@ impl RuntimeOrchestrator {
 
         match tokio::time::timeout(timeout, self.do_evaluate_lens(lens, request)).await {
             Ok(Ok(finding)) => {
+                // Cache successful result for future fallback
+                let cache_key = CacheKey::new(
+                    &request.contract,
+                    &request.output,
+                    request.context.as_deref(),
+                    lens,
+                );
+                self.cache.insert(cache_key, finding.clone()).await;
                 self.circuit_breaker.record_success(lens);
                 Ok(finding)
             }
             Ok(Err(e)) => {
                 tracing::warn!(lens = ?lens, error = %e, "Lens evaluation failed");
                 self.circuit_breaker.record_failure(lens);
-                self.fallback_to_deterministic(lens, request)
+                self.execute_fallback_chain(lens, request).await
             }
             Err(_) => {
                 tracing::warn!(lens = ?lens, timeout = ?timeout, "Lens evaluation timed out");
                 self.circuit_breaker.record_failure(lens);
-                self.fallback_to_deterministic(lens, request)
+                self.execute_fallback_chain(lens, request).await
             }
         }
     }
@@ -207,12 +229,96 @@ impl RuntimeOrchestrator {
             agent.evaluate(request).await.map_err(RuntimeError::from)
         } else {
             // No agent registered, use deterministic fallback
-            self.fallback_to_deterministic(lens, request)
+            self.deterministic_fallback(lens, request)
+        }
+    }
+
+    /// Execute the fallback chain until one strategy succeeds.
+    async fn execute_fallback_chain(
+        &self,
+        lens: LensType,
+        request: &EvaluationRequest,
+    ) -> Result<LensFinding, RuntimeError> {
+        for strategy in &self.config.fallback {
+            match self.try_fallback_strategy(strategy, lens, request).await {
+                Ok(finding) => {
+                    tracing::debug!(
+                        lens = ?lens,
+                        strategy = ?strategy,
+                        "Fallback strategy succeeded"
+                    );
+                    return Ok(finding);
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        lens = ?lens,
+                        strategy = ?strategy,
+                        error = %e,
+                        "Fallback strategy failed, trying next"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        Err(RuntimeError::AllFallbacksExhausted)
+    }
+
+    /// Try a single fallback strategy.
+    async fn try_fallback_strategy(
+        &self,
+        strategy: &FallbackStrategy,
+        lens: LensType,
+        request: &EvaluationRequest,
+    ) -> Result<LensFinding, RuntimeError> {
+        match strategy {
+            FallbackStrategy::Cache => self.try_cache_fallback(lens, request).await,
+            FallbackStrategy::SimplerModel { model: _ } => {
+                // For now, simpler model falls through to deterministic
+                // TODO: Implement model switching when multiple providers are supported
+                Err(RuntimeError::EvaluationFailed(
+                    "Simpler model not yet implemented".to_string(),
+                ))
+            }
+            FallbackStrategy::Deterministic => self.deterministic_fallback(lens, request),
+            FallbackStrategy::EscalateWithUncertainty => Ok(self.escalate_with_uncertainty(lens)),
+            FallbackStrategy::Fail => Err(RuntimeError::AllFallbacksExhausted),
+        }
+    }
+
+    /// Try to get a cached result.
+    async fn try_cache_fallback(
+        &self,
+        lens: LensType,
+        request: &EvaluationRequest,
+    ) -> Result<LensFinding, RuntimeError> {
+        if !self.config.cache.enabled {
+            return Err(RuntimeError::CacheMiss);
+        }
+
+        let cache_key = CacheKey::new(
+            &request.contract,
+            &request.output,
+            request.context.as_deref(),
+            lens,
+        );
+
+        match self.cache.get(&cache_key).await {
+            Some(mut finding) => {
+                // Slightly reduce confidence for cached results
+                finding.confidence *= 0.95;
+                tracing::debug!(lens = ?lens, "Cache hit");
+                Ok(finding)
+            }
+            None => {
+                tracing::debug!(lens = ?lens, "Cache miss");
+                Err(RuntimeError::CacheMiss)
+            }
         }
     }
 
     /// Fallback to deterministic evaluation from steward-core.
-    fn fallback_to_deterministic(
+    fn deterministic_fallback(
         &self,
         lens: LensType,
         request: &EvaluationRequest,
@@ -222,11 +328,11 @@ impl RuntimeOrchestrator {
         };
 
         let lens_impl: Box<dyn Lens> = match lens {
-            LensType::DignityInclusion => Box::new(DignityLens::new()),
+            LensType::AccountabilityOwnership => Box::new(AccountabilityLens::new()),
             LensType::BoundariesSafety => Box::new(BoundariesLens::new()),
+            LensType::DignityInclusion => Box::new(DignityLens::new()),
             LensType::RestraintPrivacy => Box::new(RestraintLens::new()),
             LensType::TransparencyContestability => Box::new(TransparencyLens::new()),
-            LensType::AccountabilityOwnership => Box::new(AccountabilityLens::new()),
         };
 
         let mut finding = lens_impl.evaluate(request);
@@ -235,6 +341,21 @@ impl RuntimeOrchestrator {
         finding.confidence *= 0.8;
 
         Ok(finding)
+    }
+
+    /// Return ESCALATE with low confidence when all else fails.
+    fn escalate_with_uncertainty(&self, lens: LensType) -> LensFinding {
+        use steward_core::LensState;
+
+        LensFinding {
+            lens: Some(lens),
+            question_asked: Some(lens.question().to_string()),
+            state: LensState::Escalate {
+                reason: "Evaluation uncertain - fallback chain exhausted".to_string(),
+            },
+            rules_evaluated: vec![],
+            confidence: 0.3, // Low confidence
+        }
     }
 
     /// Get current LLM usage.

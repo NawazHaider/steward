@@ -29,11 +29,16 @@ impl Default for FallbackStrategy {
 }
 
 /// Fallback chain - tried in order.
+///
+/// Note: Currently the orchestrator uses `Vec<FallbackStrategy>` from config directly.
+/// This struct provides a builder pattern for programmatic chain construction.
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)] // Builder pattern reserved for programmatic use
 pub struct FallbackChain {
     strategies: Vec<FallbackStrategy>,
 }
 
+#[allow(dead_code)] // Builder pattern reserved for programmatic use
 impl FallbackChain {
     /// Create a new fallback chain.
     pub fn new() -> Self {

@@ -15,13 +15,14 @@ use steward_core::{
 };
 
 /// Lens types for categorizing findings.
+/// Ordered alphabetically to match steward-core's Ord implementation.
 #[napi]
 pub enum LensType {
-    DignityInclusion,
+    AccountabilityOwnership,
     BoundariesSafety,
+    DignityInclusion,
     RestraintPrivacy,
     TransparencyContestability,
-    AccountabilityOwnership,
 }
 
 impl From<CoreLensType> for LensType {

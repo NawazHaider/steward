@@ -4,7 +4,7 @@
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use steward_core::LensType;
 
@@ -123,8 +123,8 @@ impl LlmUsage {
 
 /// Budget tracker for the entire evaluation.
 pub struct BudgetTracker {
-    /// Per-lens budgets
-    lens_budgets: HashMap<LensType, TokenBudget>,
+    /// Per-lens budgets (BTreeMap for deterministic iteration order)
+    lens_budgets: BTreeMap<LensType, TokenBudget>,
 
     /// Global budget for entire evaluation
     global_budget: TokenBudget,
@@ -133,17 +133,21 @@ pub struct BudgetTracker {
     usage: RwLock<LlmUsage>,
 }
 
+/// Default per-lens token budget when not specified in config.
+pub const DEFAULT_PER_LENS_BUDGET: u32 = 1000;
+
 impl BudgetTracker {
     /// Create a new budget tracker with default budgets.
     pub fn new(global_max: u32, per_lens_max: u32) -> Self {
-        let mut lens_budgets = HashMap::new();
+        let mut lens_budgets = BTreeMap::new();
 
+        // Alphabetical order matches LensType's Ord implementation
         for lens in [
-            LensType::DignityInclusion,
+            LensType::AccountabilityOwnership,
             LensType::BoundariesSafety,
+            LensType::DignityInclusion,
             LensType::RestraintPrivacy,
             LensType::TransparencyContestability,
-            LensType::AccountabilityOwnership,
         ] {
             lens_budgets.insert(lens, TokenBudget::new(per_lens_max));
         }
@@ -156,11 +160,20 @@ impl BudgetTracker {
     }
 
     /// Create with custom per-lens budgets.
-    pub fn with_lens_budgets(global_max: u32, budgets: HashMap<LensType, u32>) -> Self {
-        let lens_budgets = budgets
-            .into_iter()
-            .map(|(lens, max)| (lens, TokenBudget::new(max)))
-            .collect();
+    pub fn with_lens_budgets(global_max: u32, budgets: BTreeMap<LensType, u32>) -> Self {
+        let mut lens_budgets = BTreeMap::new();
+
+        // Ensure all lenses have a budget (use default if not specified)
+        for lens in [
+            LensType::AccountabilityOwnership,
+            LensType::BoundariesSafety,
+            LensType::DignityInclusion,
+            LensType::RestraintPrivacy,
+            LensType::TransparencyContestability,
+        ] {
+            let budget = budgets.get(&lens).copied().unwrap_or(DEFAULT_PER_LENS_BUDGET);
+            lens_budgets.insert(lens, TokenBudget::new(budget));
+        }
 
         Self {
             lens_budgets,

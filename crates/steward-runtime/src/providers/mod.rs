@@ -8,11 +8,15 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
 
+mod factory;
+
 #[cfg(feature = "anthropic")]
 mod anthropic;
 
+pub use factory::{ProviderFactory, ProviderRegistry};
+
 #[cfg(feature = "anthropic")]
-pub use anthropic::AnthropicProvider;
+pub use anthropic::{AnthropicProvider, AnthropicProviderFactory};
 
 /// Errors from LLM providers.
 #[derive(Error, Debug)]
@@ -170,24 +174,6 @@ pub trait LlmProvider: Send + Sync {
         // Simple estimate: ~4 chars per token
         (text.len() / 4) as u32
     }
-}
-
-/// Supported provider types.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ProviderType {
-    Anthropic {
-        model: String,
-        #[serde(default)]
-        prompt_caching: bool,
-    },
-    OpenAI {
-        model: String,
-    },
-    Local {
-        endpoint: String,
-        model: String,
-    },
 }
 
 #[cfg(test)]

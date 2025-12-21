@@ -105,14 +105,15 @@ impl PyOutput {
 }
 
 /// Python-compatible enum for LensType.
+/// Ordered alphabetically to match steward-core's Ord implementation.
 #[pyclass(name = "LensType", eq)]
 #[derive(Clone, PartialEq, Debug)]
 pub enum PyLensType {
-    DignityInclusion,
+    AccountabilityOwnership,
     BoundariesSafety,
+    DignityInclusion,
     RestraintPrivacy,
     TransparencyContestability,
-    AccountabilityOwnership,
 }
 
 impl From<CoreLensType> for PyLensType {

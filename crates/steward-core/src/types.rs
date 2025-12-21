@@ -144,14 +144,16 @@ pub struct BoundaryViolation {
 }
 
 /// The five lens types.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+///
+/// Ordered alphabetically for deterministic iteration in BTreeMap.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum LensType {
-    DignityInclusion,
+    AccountabilityOwnership,
     BoundariesSafety,
+    DignityInclusion,
     RestraintPrivacy,
     TransparencyContestability,
-    AccountabilityOwnership,
 }
 
 impl LensType {

@@ -13,6 +13,12 @@ cat response.txt | steward evaluate --contract contract.yaml
 # Exit 0: PROCEED | Exit 1: ESCALATE | Exit 2: BLOCKED
 ```
 
+```
+Contract + Output → [5 Lenses in parallel] → Synthesizer → PROCEED | ESCALATE | BLOCKED
+                                                              │
+                                    confidence = min(all lenses), evidence required
+```
+
 ---
 
 ## The Three States
@@ -125,6 +131,19 @@ Ready-to-use contracts for regulated industries with compliance mapping:
 | **HR** | [hr.yaml](contracts/hr.yaml) | Title VII, ADA, EEOC AI Guidance |
 
 See [Compliance Mapping](docs/compliance-mapping.md) for detailed regulatory coverage.
+
+---
+
+## Architecture
+
+```
+steward-core (deterministic, NO LLM)      steward-runtime (optional LLM)
+├── 5 independent lenses                  ├── ProviderFactory/Registry
+├── Synthesizer (strict policy)           ├── Parallel orchestration
+└── Evidence linking                      └── Fallback chain + resilience
+```
+
+The core is always deterministic. The runtime adds optional LLM-assisted evaluation with circuit breakers, token budgets, and fallback strategies.
 
 ---
 

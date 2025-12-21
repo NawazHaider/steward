@@ -229,31 +229,136 @@ Each lens asks one stewardship question. They evaluate **independently**—lense
 
 ## Architecture
 
+### Evaluation Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        STEWARD EVALUATION PIPELINE                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   Contract (YAML)  +  Output (text)  +  Context (optional)              │
+│          │                  │                   │                       │
+│          └──────────────────┴───────────────────┘                       │
+│                             │                                           │
+│                             ▼                                           │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │                    PARALLEL LENS EVALUATION                     │   │
+│   │                      (via tokio::join!)                         │   │
+│   │                                                                 │   │
+│   │   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │   │
+│   │   │Dignity &│ │Boundary │ │Restraint│ │Transpar-│ │Account- │   │   │
+│   │   │Inclusion│ │& Safety │ │& Privacy│ │ency     │ │ability  │   │   │
+│   │   └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘   │   │
+│   │        │           │           │           │           │        │   │
+│   │        └─────┬─────┴─────┬─────┴─────┬─────┴─────┬─────┘        │   │
+│   └──────────────┼───────────┼───────────┼───────────┼──────────────┘   │
+│                  │           │           │           │                  │
+│                  ▼           ▼           ▼           ▼                  │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │                    SYNTHESIZER (deterministic)                  │   │
+│   │                                                                 │   │
+│   │   1. ANY lens BLOCKED    →  BLOCKED  (cite rule + evidence)     │   │
+│   │   2. ANY lens ESCALATE   →  ESCALATE (present options)          │   │
+│   │   3. confidence < 0.4    →  ESCALATE (uncertainty signal)       │   │
+│   │   4. ALL lenses PASS     →  PROCEED  (log and continue)         │   │
+│   │                                                                 │   │
+│   │   Confidence = min(lens₁, lens₂, lens₃, lens₄, lens₅)           │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
+│                             │                                           │
+│                             ▼                                           │
+│                    EvaluationResult                                     │
+│                    ├── state: PROCEED | ESCALATE | BLOCKED              │
+│                    ├── lens_findings: 5 findings                        │
+│                    ├── confidence: 0.0 - 1.0                            │
+│                    └── evidence: rule citations                         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
 ### Crate Structure
 
 ```
 steward/
 ├── crates/
-│   ├── steward-core/        # DETERMINISTIC: No LLM calls
-│   │   ├── contract/        # Parsing, validation, schema
-│   │   ├── lenses/          # Five independent evaluators
-│   │   ├── synthesizer.rs   # Strict policy machine
-│   │   └── evidence.rs      # Evidence linking
+│   ├── steward-core/           # DETERMINISTIC: No LLM calls
+│   │   ├── contract/           # Parsing, validation, schema
+│   │   ├── lenses/             # 5 independent evaluators
+│   │   │   ├── dignity.rs      # Dignity & Inclusion
+│   │   │   ├── boundaries.rs   # Boundaries & Safety
+│   │   │   ├── restraint.rs    # Restraint & Privacy
+│   │   │   ├── transparency.rs # Transparency & Contestability
+│   │   │   ├── accountability.rs # Accountability & Ownership
+│   │   │   └── domain_patterns.rs # Domain-specific patterns
+│   │   ├── synthesizer.rs      # Strict policy machine
+│   │   ├── evidence.rs         # Evidence linking
+│   │   └── types.rs            # Core types (LensType implements Ord)
 │   │
-│   ├── steward-runtime/     # OPTIONAL: LLM orchestration
-│   │   ├── providers/       # LLM provider abstraction
-│   │   ├── agents/          # Governance agents
-│   │   ├── resilience/      # Circuit breaker, budget
-│   │   └── evidence/        # Evidence validation
+│   ├── steward-runtime/        # OPTIONAL: LLM orchestration
+│   │   ├── providers/
+│   │   │   ├── mod.rs          # LlmProvider trait
+│   │   │   ├── factory.rs      # ProviderFactory + ProviderRegistry
+│   │   │   └── anthropic.rs    # AnthropicProvider + Factory
+│   │   ├── agents/             # Governance agents (LensAgent trait)
+│   │   ├── orchestrator.rs     # Parallel evaluation + fallback chain
+│   │   ├── resilience/
+│   │   │   ├── circuit_breaker.rs  # Per-lens circuit breakers
+│   │   │   ├── budget.rs       # Token budget tracking (BTreeMap)
+│   │   │   └── fallback.rs     # Fallback strategies
+│   │   ├── cache.rs            # Evaluation cache (moka)
+│   │   └── evidence/           # LLM evidence validation
 │   │
-│   └── steward-cli/         # Binary CLI
+│   └── steward-cli/            # Binary CLI
 │
-└── bindings/
-    ├── python/              # PyO3 bindings
-    └── node/                # napi-rs bindings
+├── bindings/
+│   ├── python/                 # PyO3 bindings (maturin build)
+│   └── node/                   # napi-rs bindings
+│
+└── contracts/                  # Domain packs
+    ├── general.yaml
+    ├── healthcare.yaml
+    ├── finance.yaml
+    ├── legal.yaml
+    ├── education.yaml
+    └── hr.yaml
 ```
 
 ### Critical Boundary
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        steward-core                              │
+│                    (DETERMINISTIC - NO LLM)                      │
+│                                                                  │
+│  • Contract parsing & validation                                 │
+│  • 5 lens evaluators (pattern matching, rule checking)           │
+│  • Synthesizer (strict policy machine)                           │
+│  • Evidence linking                                              │
+│  • Types: LensType (Ord), State, EvaluationResult                │
+└──────────────────────────────────────────────────────────────────┘
+                                ▲
+                                │ depends on
+┌───────────────────────────────┴──────────────────────────────────┐
+│                      steward-runtime                             │
+│                   (OPTIONAL - LLM assisted)                      │
+│                                                                  │
+│  • LlmProvider trait (async completion)                          │
+│  • ProviderFactory + ProviderRegistry (dynamic registration)     │
+│  • Governance agents (LensAgent per lens)                        │
+│  • RuntimeOrchestrator (parallel fan-out, fallback chain)        │
+│  • Resilience: circuit breaker, budget, cache                    │
+│  • Evidence validation (pointer bounds, quote matching)          │
+└──────────────────────────────────────────────────────────────────┘
+                                ▲
+                                │ depends on
+┌───────────────────────────────┴──────────────────────────────────┐
+│                        steward-cli                               │
+│                       (thin wrapper)                             │
+│                                                                  │
+│  • steward evaluate --contract --output                          │
+│  • stdin pipe support                                            │
+│  • JSON/text output formats                                      │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 | Crate | LLM Calls? | Responsibility |
 |-------|------------|----------------|
@@ -262,6 +367,30 @@ steward/
 | steward-cli | No | Command-line interface |
 
 **steward-core must never make LLM calls.** This is a hard boundary.
+
+### Runtime Resilience
+
+When LLM evaluation fails, the runtime executes a configurable fallback chain:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     FALLBACK CHAIN                              │
+│                (executed in order until success)                │
+│                                                                 │
+│   1. Cache        → Check EvaluationCache for previous result   │
+│   2. SimplerModel → Try cheaper model (future)                  │
+│   3. Deterministic→ Use steward-core lens (confidence × 0.8)    │
+│   4. Escalate     → Return ESCALATE with 0.3 confidence         │
+│   5. Fail         → Return AllFallbacksExhausted error          │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key resilience features:**
+- **Circuit breaker**: Per-lens, opens after consecutive failures
+- **Token budget**: Config-driven per-lens limits (BTreeMap for determinism)
+- **Evaluation cache**: Moka-based async cache with TTL
+- **Timeout**: Per-lens configurable timeouts
 
 ### Terminology
 

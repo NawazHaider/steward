@@ -238,4 +238,10 @@ This document maps Steward contract rules to specific regulatory requirements, e
 
 ---
 
-*Last Updated: December 2025*
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-12-20 | Initial release with 5 domain packs |
+
+*Last Updated: 2025-12-20*

@@ -11,5 +11,5 @@ mod budget;
 mod fallback;
 
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
-pub use budget::{BudgetTracker, TokenBudget, LlmUsage};
+pub use budget::{BudgetTracker, TokenBudget, LlmUsage, DEFAULT_PER_LENS_BUDGET};
 pub use fallback::FallbackStrategy;

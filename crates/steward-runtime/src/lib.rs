@@ -94,7 +94,7 @@ pub use prompts::{get_lens_prompt, BASE_SYSTEM_PROMPT};
 pub use providers::AnthropicProvider;
 pub use providers::{
     ChatMessage, CompletionConfig, CompletionResponse, LlmProvider,
-    ProviderError, ProviderType, TokenUsage,
+    ProviderError, ProviderFactory, ProviderRegistry, TokenUsage,
 };
 pub use resilience::{BudgetTracker, CircuitBreaker, CircuitBreakerConfig, FallbackStrategy, LlmUsage};
 pub use synthesizer::{ExtensionManager, SynthesizerMetadataExtension};
