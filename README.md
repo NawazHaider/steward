@@ -93,6 +93,17 @@ if (isBlocked(result.state.stateType)) {
 }
 ```
 
+### Julia
+
+```julia
+using Steward
+
+result = Steward.evaluate(contract_yaml, "Your order #12345 shipped yesterday.")
+if result["state"] == "blocked"
+    println("BLOCKED: ", result["violation"]["rule_id"])
+end
+```
+
 ---
 
 ## Example Contract
@@ -143,19 +154,24 @@ See [Compliance Mapping](docs/compliance-mapping.md) for detailed regulatory cov
 
 ```
 steward-core (deterministic, NO LLM)      steward-runtime (optional LLM)
-├── 5 independent lenses                  ├── ProviderFactory/Registry
+├── 5 independent lenses                  ├── Provider registry + factory
 │   ├── Dignity & Inclusion               ├── Parallel orchestration
-│   ├── Boundaries & Safety               └── Fallback chain + resilience
-│   ├── Restraint & Privacy
+│   ├── Boundaries & Safety               ├── Circuit breaker + budgets
+│   ├── Restraint & Privacy               └── Fallback chain + resilience
 │   ├── Transparency & Contestability
-│   └── Accountability & Ownership
-├── Synthesizer (strict policy)
-└── Evidence linking
+│   └── Accountability & Ownership        steward-bindings-core (FFI layer)
+├── Synthesizer (strict policy)           ├── IR types for marshalling
+└── Evidence linking                      └── Shared test fixtures
+
+                                          Language bindings (thin wrappers)
+                                          ├── Python (PyO3)
+                                          ├── Node.js (napi-rs)
+                                          └── Julia (C ABI)
 ```
 
 The core is always deterministic. Lenses evaluate independently—they don't debate or persuade each other. Synthesis is policy, not intelligence.
 
-The runtime adds optional LLM-assisted evaluation with circuit breakers, token budgets, and fallback strategies.
+The runtime adds optional LLM-assisted evaluation with circuit breakers, token budgets, and fallback strategies. Bindings are thin FFI wrappers—all semantics live in `steward-core`.
 
 ---
 
@@ -185,15 +201,21 @@ The runtime adds optional LLM-assisted evaluation with circuit breakers, token b
 ## Installation
 
 ```bash
-# Rust
-cargo install steward-cli
+# Rust (from source)
+cargo install --path crates/steward-cli
 
-# Python
-pip install steward
+# Python (from source)
+cd bindings/python && maturin develop
 
-# Node.js
-npm install @steward/core
+# Node.js (from source)
+cd bindings/node && npm run build
+
+# Julia (from source)
+cargo build --release -p steward-julia
+# Then load libsteward_julia.dylib via ccall
 ```
+
+*Package registry publishing (crates.io, PyPI, npm) coming soon.*
 
 ---
 

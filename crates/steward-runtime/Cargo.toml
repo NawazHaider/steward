@@ -51,6 +51,9 @@ regex.workspace = true
 # Atomics for budget tracking
 parking_lot = "0.12"
 
+# Secret handling - prevents accidental logging of sensitive values
+secrecy = "0.10"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
 proptest.workspace = true

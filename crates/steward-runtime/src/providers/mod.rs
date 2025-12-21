@@ -2,6 +2,11 @@
 //!
 //! This module defines the trait for LLM providers and includes
 //! implementations for Anthropic, OpenAI, and local models.
+//!
+//! ## Security
+//!
+//! All providers use the [`secrets`] module for secure credential handling.
+//! See [`ApiCredential`] for the recommended patterns.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -9,11 +14,13 @@ use std::time::Duration;
 use thiserror::Error;
 
 mod factory;
+pub mod secrets;
 
 #[cfg(feature = "anthropic")]
 mod anthropic;
 
 pub use factory::{ProviderFactory, ProviderRegistry};
+pub use secrets::{ApiCredential, CredentialBuilder, CredentialSet, CredentialSource};
 
 #[cfg(feature = "anthropic")]
 pub use anthropic::{AnthropicProvider, AnthropicProviderFactory};

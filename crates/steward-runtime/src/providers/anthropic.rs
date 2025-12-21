@@ -1,10 +1,16 @@
 //! Anthropic Claude provider implementation.
 //!
 //! Supports Claude 4.5 family with prompt caching.
+//!
+//! ## Security
+//!
+//! This provider uses the centralized [`ApiCredential`] system for secure
+//! credential handling. See the [`secrets`](super::secrets) module for details.
 
 use super::{
-    factory::ProviderFactory, ChatMessage, CompletionConfig, CompletionResponse, LlmProvider,
-    ProviderError, TokenUsage,
+    factory::ProviderFactory,
+    secrets::{ApiCredential, CredentialSource},
+    ChatMessage, CompletionConfig, CompletionResponse, LlmProvider, ProviderError, TokenUsage,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -12,32 +18,95 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Environment variable name for Anthropic API key.
+pub const ANTHROPIC_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
+
 /// Anthropic Claude provider.
+///
+/// # Security
+///
+/// The API key is stored using [`ApiCredential`] which:
+/// - Cannot be accidentally printed via `Debug` or `Display`
+/// - Is zeroed on drop (defense in depth against memory scraping)
+/// - Must be explicitly exposed via `.expose()` when needed
+/// - Tracks the credential source for debugging
 pub struct AnthropicProvider {
-    api_key: String,
+    credential: ApiCredential,
     base_url: String,
     #[allow(dead_code)] // Reserved for future connection pooling
     client: Option<reqwest::Client>,
+}
+
+impl std::fmt::Debug for AnthropicProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnthropicProvider")
+            .field("credential", &self.credential)
+            .field("base_url", &self.base_url)
+            .finish()
+    }
 }
 
 impl AnthropicProvider {
     /// Create a new Anthropic provider.
     ///
     /// # Arguments
-    /// * `api_key` - Anthropic API key
+    /// * `api_key` - Anthropic API key (will be stored securely)
+    ///
+    /// # Security
+    ///
+    /// The API key is immediately wrapped in an [`ApiCredential`] and cannot
+    /// be accidentally logged or printed after construction.
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
-            api_key: api_key.into(),
+            credential: ApiCredential::new(
+                api_key,
+                CredentialSource::Programmatic,
+                "Anthropic API key",
+            ),
             base_url: "https://api.anthropic.com/v1".to_string(),
             client: None,
         }
     }
 
     /// Create from environment variable.
+    ///
+    /// # Security
+    ///
+    /// Reads `ANTHROPIC_API_KEY` from environment and stores it securely.
+    /// The environment variable value is not logged.
     pub fn from_env() -> Result<Self, ProviderError> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY")
-            .map_err(|_| ProviderError::NotConfigured("ANTHROPIC_API_KEY not set".to_string()))?;
-        Ok(Self::new(api_key))
+        let credential = ApiCredential::from_env(ANTHROPIC_API_KEY_ENV, "Anthropic API key")?;
+        Ok(Self {
+            credential,
+            base_url: "https://api.anthropic.com/v1".to_string(),
+            client: None,
+        })
+    }
+
+    /// Create from JSON configuration with environment fallback.
+    ///
+    /// This is the recommended factory method. It:
+    /// 1. Checks for `api_key` in the config
+    /// 2. Falls back to `ANTHROPIC_API_KEY` environment variable
+    /// 3. Returns error if neither is set
+    pub fn from_config(config: &JsonValue) -> Result<Self, ProviderError> {
+        let credential = ApiCredential::from_config_or_env(
+            config,
+            "api_key",
+            ANTHROPIC_API_KEY_ENV,
+            "Anthropic API key",
+        )?;
+
+        let base_url = config["base_url"]
+            .as_str()
+            .unwrap_or("https://api.anthropic.com/v1")
+            .to_string();
+
+        Ok(Self {
+            credential,
+            base_url,
+            client: None,
+        })
     }
 
     /// Set custom base URL.
@@ -188,9 +257,10 @@ impl LlmProvider for AnthropicProvider {
             },
         };
 
+        // SECURITY: Only expose the credential here, at the point of use
         let response = client
             .post(format!("{}/messages", self.base_url))
-            .header("x-api-key", &self.api_key)
+            .header("x-api-key", self.credential.expose())
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
             .timeout(config.timeout)
@@ -266,8 +336,8 @@ impl LlmProvider for AnthropicProvider {
     }
 
     async fn health_check(&self) -> bool {
-        // Simple check - verify API key is set
-        !self.api_key.is_empty()
+        // Simple check - verify API key is set (without logging the value)
+        !self.credential.is_empty()
     }
 
     fn name(&self) -> &str {
@@ -294,38 +364,18 @@ impl ProviderFactory for AnthropicProviderFactory {
     }
 
     fn create(&self, config: &JsonValue) -> Result<Arc<dyn LlmProvider>, ProviderError> {
-        // Get API key from config or environment
-        let api_key = config["api_key"]
-            .as_str()
-            .map(String::from)
-            .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
-            .ok_or_else(|| {
-                ProviderError::NotConfigured(
-                    "Anthropic API key required: set 'api_key' in config or ANTHROPIC_API_KEY env"
-                        .to_string(),
-                )
-            })?;
-
-        let mut provider = AnthropicProvider::new(api_key);
-
-        // Apply optional base URL
-        if let Some(base_url) = config["base_url"].as_str() {
-            provider = provider.with_base_url(base_url);
-        }
-
+        // Use the centralized from_config which handles credential loading securely
+        let provider = AnthropicProvider::from_config(config)?;
         Ok(Arc::new(provider))
     }
 
     fn validate_config(&self, config: &JsonValue) -> Result<(), ProviderError> {
-        // API key is optional in config if env var is set
-        let has_api_key = config["api_key"].as_str().is_some()
-            || std::env::var("ANTHROPIC_API_KEY").is_ok();
-
-        if !has_api_key {
-            return Err(ProviderError::NotConfigured(
-                "Anthropic API key required: set 'api_key' in config or ANTHROPIC_API_KEY env"
-                    .to_string(),
-            ));
+        // Check credential availability without loading
+        if !ApiCredential::is_available(config, "api_key", ANTHROPIC_API_KEY_ENV) {
+            return Err(ProviderError::NotConfigured(format!(
+                "Anthropic API key required: set 'api_key' in config or {} env",
+                ANTHROPIC_API_KEY_ENV
+            )));
         }
 
         // Validate base_url if present
@@ -410,5 +460,78 @@ mod tests {
         });
         let result = factory.validate_config(&config);
         assert!(result.is_err());
+    }
+
+    // ==================== SECURITY TESTS ====================
+
+    #[test]
+    fn test_api_key_not_in_debug_output() {
+        let secret_key = "sk-ant-super-secret-key-12345";
+        let provider = AnthropicProvider::new(secret_key);
+
+        // Debug output should NOT contain the actual key
+        let debug_output = format!("{:?}", provider);
+
+        assert!(
+            !debug_output.contains(secret_key),
+            "API key was exposed in Debug output!"
+        );
+        assert!(
+            debug_output.contains("[REDACTED]"),
+            "Debug output should show [REDACTED]"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_api_key_accessible_for_health_check() {
+        let secret_key = "sk-ant-super-secret-key-12345";
+        let provider = AnthropicProvider::new(secret_key);
+
+        // Key should be usable internally (health_check checks is_empty)
+        assert!(provider.health_check().await);
+
+        // Empty key should fail health check
+        let empty_provider = AnthropicProvider::new("");
+        assert!(!empty_provider.health_check().await);
+    }
+
+    #[test]
+    fn test_api_key_not_in_error_messages() {
+        // Simulate an error scenario - key should not appear in error text
+        let secret_key = "sk-ant-super-secret-key-12345";
+        let provider = AnthropicProvider::new(secret_key);
+
+        // Even if we somehow create an error with provider info,
+        // the key should not be exposed
+        let error_msg = format!("Provider error: {:?}", provider);
+        assert!(
+            !error_msg.contains(secret_key),
+            "API key was exposed in error message!"
+        );
+    }
+
+    #[test]
+    fn test_from_config_with_api_key() {
+        let config = serde_json::json!({
+            "api_key": "config-api-key",
+            "base_url": "https://custom.api.com/v1"
+        });
+
+        let provider = AnthropicProvider::from_config(&config).unwrap();
+        assert_eq!(provider.base_url, "https://custom.api.com/v1");
+        assert_eq!(provider.credential.expose(), "config-api-key");
+        assert_eq!(provider.credential.source(), CredentialSource::Config);
+    }
+
+    #[test]
+    fn test_credential_source_is_tracked() {
+        // Programmatic source
+        let provider = AnthropicProvider::new("key");
+        assert_eq!(provider.credential.source(), CredentialSource::Programmatic);
+
+        // Config source
+        let config = serde_json::json!({"api_key": "key"});
+        let provider = AnthropicProvider::from_config(&config).unwrap();
+        assert_eq!(provider.credential.source(), CredentialSource::Config);
     }
 }
