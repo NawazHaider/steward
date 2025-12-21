@@ -4,9 +4,12 @@
 
 # Steward
 
-**Governance calculus for AI systems.**
+Governance calculus for AI systems
 
-Steward is governance calculus: contracts define criteria, lenses evaluate independently, and a deterministic synthesizer reduces findings into PROCEED/ESCALATE/BLOCKED with conservative confidence and evidence-backed accountability.
+Steward is a governance calculus: human-authored contracts define criteria, parallel lenses evaluate independently, and a deterministic synthesizer reduces findings into PROCEED / ESCALATE / BLOCKED with conservative confidence and evidence-backed accountability.
+
+Steward is a governance primitive, not an evaluation model.
+It provides infrastructure for enforcing human-defined boundaries in agentic AI systems.
 
 ```bash
 cat response.txt | steward evaluate --contract contract.yaml
