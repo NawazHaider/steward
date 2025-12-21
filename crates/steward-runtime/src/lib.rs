@@ -3,148 +3,109 @@
 //! Optional LLM-assisted evaluation for Steward.
 //!
 //! This crate provides LLM-based evaluation for rules that require
-//! interpretation beyond deterministic pattern matching.
+//! semantic interpretation beyond deterministic pattern matching.
 //!
-//! ## Important
+//! ## Key Principle
 //!
-//! This crate is OPTIONAL. The core evaluation in `steward-core` is
-//! fully deterministic and never makes LLM calls.
+//! **The core remains deterministic. LLMs assist; they do not decide.**
 //!
-//! Use this crate when:
-//! - Rules are ambiguous and need semantic understanding
-//! - Pattern matching produces too many false positives/negatives
-//! - You need natural language interpretation of rules
+//! - `steward-core` handles pattern matching deterministically
+//! - `steward-runtime` provides optional LLM orchestration
+//! - The Synthesizer NEVER makes LLM calls - it applies strict policy rules
+//!
+//! ## Architecture
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                    STEWARD RUNTIME PIPELINE                      │
+//! ├─────────────────────────────────────────────────────────────────┤
+//! │                                                                  │
+//! │  Contract + Output                                               │
+//! │       │                                                          │
+//! │       ▼                                                          │
+//! │  ┌─────────────────────────────────────────────┐                │
+//! │  │            PARALLEL FAN-OUT                  │                │
+//! │  │         (5 lens agents via tokio::join!)    │                │
+//! │  └─────────────────────────────────────────────┘                │
+//! │       │                                                          │
+//! │       ▼                                                          │
+//! │  ┌─────────────────────────────────────────────┐                │
+//! │  │            SYNTHESIZER                       │                │
+//! │  │     (STRICT POLICY MACHINE - NO LLM)        │                │
+//! │  │                                              │                │
+//! │  │  1. ANY BLOCKED → BLOCKED                   │                │
+//! │  │  2. ELSE ANY ESCALATE → ESCALATE            │                │
+//! │  │  3. ELSE confidence < 0.4 → ESCALATE        │                │
+//! │  │  4. ELSE → PROCEED                          │                │
+//! │  └─────────────────────────────────────────────┘                │
+//! │       │                                                          │
+//! │       ▼                                                          │
+//! │  EvaluationResult + LlmUsage                                    │
+//! │                                                                  │
+//! └─────────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Evidence Validation
+//!
+//! LLM agents produce **evidence**, not **verdicts**. The runtime validates:
+//! 1. JSON schema compliance
+//! 2. Pointer ranges are in-bounds
+//! 3. Quotes match referenced slices exactly
+//!
+//! On validation failure: fallback to deterministic (never "best-effort parse").
 //!
 //! ## Example
 //!
 //! ```rust,ignore
-//! use steward_runtime::{LlmEvaluator, LlmConfig};
+//! use steward_runtime::{RuntimeOrchestrator, RuntimeConfig};
+//! use steward_runtime::providers::AnthropicProvider;
+//! use std::sync::Arc;
 //!
-//! let config = LlmConfig::new("claude-3-5-sonnet");
-//! let evaluator = LlmEvaluator::new(config)?;
+//! // Create provider
+//! let provider = Arc::new(AnthropicProvider::from_env()?);
 //!
-//! // Evaluate a rule that needs interpretation
-//! let result = evaluator.evaluate_rule(
-//!     "Customer expresses frustration",
-//!     "I've been waiting for an hour!",
-//! ).await?;
+//! // Create orchestrator
+//! let orchestrator = RuntimeOrchestrator::new(provider, RuntimeConfig::default());
+//!
+//! // Evaluate
+//! let result = orchestrator.evaluate(&contract, &output, None).await?;
+//! println!("State: {:?}", result.evaluation.state);
+//! println!("LLM calls: {}", result.llm_usage.llm_calls);
 //! ```
 
-use thiserror::Error;
+pub mod agents;
+pub mod cache;
+pub mod config;
+pub mod evidence;
+pub mod orchestrator;
+pub mod prompts;
+pub mod providers;
+pub mod resilience;
+pub mod synthesizer;
 
-/// Errors from the runtime.
-#[derive(Error, Debug)]
-pub enum RuntimeError {
-    #[error("LLM provider not configured")]
-    NotConfigured,
-
-    #[error("LLM call failed: {0}")]
-    LlmError(String),
-
-    #[error("Rate limit exceeded")]
-    RateLimited,
-
-    #[error("Budget exceeded")]
-    BudgetExceeded,
-}
-
-/// Configuration for LLM-assisted evaluation.
-#[derive(Debug, Clone)]
-pub struct LlmConfig {
-    /// Model to use (e.g., "claude-3-5-sonnet")
-    pub model: String,
-
-    /// Maximum tokens per call
-    pub max_tokens: u32,
-
-    /// Temperature (0.0 for deterministic)
-    pub temperature: f32,
-
-    /// API endpoint (optional, uses default for provider)
-    pub endpoint: Option<String>,
-}
-
-impl Default for LlmConfig {
-    fn default() -> Self {
-        Self {
-            model: "claude-3-5-sonnet".to_string(),
-            max_tokens: 500,
-            temperature: 0.0, // Deterministic
-            endpoint: None,
-        }
-    }
-}
-
-impl LlmConfig {
-    /// Create a new config with the specified model.
-    pub fn new(model: impl Into<String>) -> Self {
-        Self {
-            model: model.into(),
-            ..Default::default()
-        }
-    }
-}
-
-/// Placeholder for LLM evaluator.
-///
-/// Full implementation will be added in Phase 5.
-pub struct LlmEvaluator {
-    #[allow(dead_code)]
-    config: LlmConfig,
-}
-
-impl LlmEvaluator {
-    /// Create a new LLM evaluator.
-    pub fn new(config: LlmConfig) -> Result<Self, RuntimeError> {
-        // TODO: Validate config, initialize provider client
-        Ok(Self { config })
-    }
-
-    /// Evaluate a rule using LLM.
-    ///
-    /// This is a placeholder - full implementation in Phase 5.
-    pub async fn evaluate_rule(
-        &self,
-        _rule: &str,
-        _content: &str,
-    ) -> Result<RuleInterpretation, RuntimeError> {
-        Err(RuntimeError::NotConfigured)
-    }
-}
-
-/// Result of LLM-based rule interpretation.
-#[derive(Debug, Clone)]
-pub struct RuleInterpretation {
-    /// Whether the rule is satisfied
-    pub satisfied: bool,
-
-    /// Confidence in the interpretation (0.0 - 1.0)
-    pub confidence: f64,
-
-    /// Reasoning for the interpretation
-    pub reasoning: String,
-}
+// Re-exports
+pub use agents::{AgentError, LensAgent};
+pub use cache::{CacheKey, EvaluationCache};
+pub use config::RuntimeConfig;
+pub use evidence::{EvidenceValidationError, EvidenceValidator};
+pub use orchestrator::{RuntimeError, RuntimeOrchestrator, RuntimeOrchestratorBuilder, RuntimeResult};
+pub use prompts::{get_lens_prompt, BASE_SYSTEM_PROMPT};
+#[cfg(feature = "anthropic")]
+pub use providers::AnthropicProvider;
+pub use providers::{
+    ChatMessage, CompletionConfig, CompletionResponse, LlmProvider,
+    ProviderError, ProviderType, TokenUsage,
+};
+pub use resilience::{BudgetTracker, CircuitBreaker, CircuitBreakerConfig, FallbackStrategy, LlmUsage};
+pub use synthesizer::{ExtensionManager, SynthesizerMetadataExtension};
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_config_default() {
-        let config = LlmConfig::default();
-        assert_eq!(config.temperature, 0.0);
-        assert_eq!(config.max_tokens, 500);
-    }
-
-    #[test]
-    fn test_evaluator_not_implemented() {
-        let config = LlmConfig::new("test-model");
-        let evaluator = LlmEvaluator::new(config).unwrap();
-
-        // Run async test
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime.block_on(evaluator.evaluate_rule("test", "content"));
-
-        assert!(matches!(result, Err(RuntimeError::NotConfigured)));
+    fn test_crate_compiles() {
+        // Just verify the crate compiles with all modules
+        let _ = RuntimeConfig::default();
     }
 }

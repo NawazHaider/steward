@@ -53,6 +53,7 @@ impl Synthesizer {
                 lens_findings: findings,
                 confidence,
                 evaluated_at: Utc::now(),
+                metadata: std::collections::HashMap::new(),
             };
         }
 
@@ -67,6 +68,7 @@ impl Synthesizer {
                 lens_findings: findings,
                 confidence,
                 evaluated_at: Utc::now(),
+                metadata: std::collections::HashMap::new(),
             };
         }
 
@@ -77,6 +79,7 @@ impl Synthesizer {
             lens_findings: findings,
             confidence,
             evaluated_at: Utc::now(),
+            metadata: std::collections::HashMap::new(),
         }
     }
 

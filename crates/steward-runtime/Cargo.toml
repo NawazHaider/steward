@@ -9,17 +9,55 @@ repository.workspace = true
 description = "Optional LLM-assisted evaluation runtime for Steward"
 
 [dependencies]
+# Core dependency
 steward-core.workspace = true
+
+# Async runtime
 tokio.workspace = true
+
+# Serialization
 serde.workspace = true
 serde_json.workspace = true
+
+# Error handling
 thiserror.workspace = true
+anyhow.workspace = true
+
+# HTTP client for LLM APIs
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], optional = true }
+
+# Async utilities
+futures = "0.3"
+async-trait = "0.1"
+
+# Caching
+moka = { version = "0.12", features = ["future"] }
+
+# Metrics
 tracing.workspace = true
 
-# LLM providers (optional features)
-# reqwest = { version = "0.11", features = ["json"], optional = true }
+# Retry with backoff
+backon = "1.0"
+
+# Date/time
+chrono.workspace = true
+
+# Human-readable durations for config
+humantime = "2.1"
+
+# Regex for pattern matching
+regex.workspace = true
+
+# Atomics for budget tracking
+parking_lot = "0.12"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
+proptest.workspace = true
 
 [features]
 default = []
-# claude = ["reqwest"]
-# openai = ["reqwest"]
+anthropic = ["reqwest"]
+openai = ["reqwest"]
+local = ["reqwest"]
+all-providers = ["anthropic", "openai", "local"]

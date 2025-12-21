@@ -82,6 +82,17 @@ pub struct EvaluationResult {
 
     /// When the evaluation occurred
     pub evaluated_at: DateTime<Utc>,
+
+    /// Optional runtime metadata (added by extensions)
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub metadata: HashMap<String, String>,
+}
+
+impl EvaluationResult {
+    /// Get mutable reference to metadata for runtime extensions.
+    pub fn metadata_mut(&mut self) -> &mut HashMap<String, String> {
+        &mut self.metadata
+    }
 }
 
 /// The three possible states from evaluation.
